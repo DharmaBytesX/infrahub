@@ -121,6 +121,7 @@ class TraceTransportProtocol(StrEnum):
 class BrokerDriver(StrEnum):
     RabbitMQ = "rabbitmq"
     NATS = "nats"
+    Redis = "redis"
 
     @property
     def driver_module_path(self) -> str:
@@ -129,6 +130,8 @@ class BrokerDriver(StrEnum):
                 return "infrahub.services.adapters.message_bus.nats"
             case BrokerDriver.RabbitMQ:
                 return "infrahub.services.adapters.message_bus.rabbitmq"
+            case BrokerDriver.Redis:
+                return "infrahub.services.adapters.message_bus.redis"
 
     @property
     def driver_class_name(self) -> str:
@@ -137,6 +140,8 @@ class BrokerDriver(StrEnum):
                 return "NATSMessageBus"
             case BrokerDriver.RabbitMQ:
                 return "RabbitMQMessageBus"
+            case BrokerDriver.Redis:
+                return "RedisMessageBus"
 
 
 class CacheDriver(StrEnum):
