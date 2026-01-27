@@ -1,5 +1,5 @@
 import { gql } from "@apollo/client";
-import { jsonToGraphQLQuery } from "json-to-graphql-query";
+import { jsonToGraphQLQuery, VariableType } from "json-to-graphql-query";
 
 import graphqlClient from "@/shared/api/graphql/graphqlClientApollo";
 import {
@@ -49,10 +49,14 @@ export const getObjects: GetObjects = async ({
   const queryString = jsonToGraphQLQuery({
     query: {
       __name: `GetObjects${schemaKind}`,
+      __variables: {
+        limit: "Int",
+        offset: "Int",
+      },
       [schemaKind]: {
         __args: {
-          limit,
-          offset,
+          limit: new VariableType("limit"),
+          offset: new VariableType("offset"),
           ...(filters ? addFiltersToRequest(filters) : {}),
         },
         edges: {
@@ -71,6 +75,7 @@ export const getObjects: GetObjects = async ({
   const query = gql(queryString);
   const { data, errors } = await graphqlClient.query({
     query,
+    variables: { limit, offset },
     context: {
       branch: branchName,
       date: atDate,

@@ -42,8 +42,6 @@ export const getIpPrefixList: GetIpPrefixList = async ({
       ? buildGetIpPrefixListWithoutAvailabilityQuery
       : buildGetIpPrefixListWithAvailabilityQuery
   )({
-    limit,
-    offset,
     filters,
     objectKind: schemaKind,
     attributes: attributesVisible,
@@ -53,6 +51,7 @@ export const getIpPrefixList: GetIpPrefixList = async ({
   const query = gql(queryString);
   const { data } = await graphqlClient.query({
     query,
+    variables: { limit, offset },
     context: {
       branch: branchName,
       date: atDate,

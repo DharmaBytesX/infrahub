@@ -55,12 +55,22 @@ export const RelationshipInput = React.forwardRef<
         generateRelationshipListQuery({
           peer,
           parent,
-          limit: PAGINATION,
-          offset,
-          search: searchQuery,
         })
       )
     );
+
+  const executeQuery = (queryOffset: number, querySearch: string) => {
+    loadRelationshipList({
+      variables: { limit: PAGINATION, offset: queryOffset, search: querySearch },
+    });
+  };
+
+  // Re-execute query when offset or searchQuery changes
+  useEffect(() => {
+    if (open) {
+      executeQuery(offset, searchQuery);
+    }
+  }, [offset, searchQuery]);
 
   useEffect(() => {
     const newResults =
@@ -109,7 +119,7 @@ export const RelationshipInput = React.forwardRef<
         onOpenAutoFocus={() => {
           setOffset(0);
           setShouldAggregate(false);
-          loadRelationshipList();
+          executeQuery(0, searchQuery);
         }}
       >
         <ComboboxList
