@@ -4,12 +4,14 @@ from typing import TYPE_CHECKING, Any
 
 from infrahub.core.constants import NULL_VALUE, PathType
 from infrahub.core.path import DataPath, GroupedDataPaths
+from infrahub.core.schema.generic_schema import GenericSchema
 
 from ..interface import ConstraintCheckerInterface
 from ..shared import AttributeSchemaValidatorQuery
 
 if TYPE_CHECKING:
     from infrahub.core.branch import Branch
+    from infrahub.core.schema.node_schema import NodeSchema
     from infrahub.database import InfrahubDatabase
 
     from ..model import SchemaConstraintValidatorRequest
@@ -75,12 +77,89 @@ class AttributeOptionalChecker(ConstraintCheckerInterface):
     def supports(self, request: SchemaConstraintValidatorRequest) -> bool:
         return request.constraint_name == self.name
 
+    @staticmethod
+    def _attr_in_hfid_or_uniqueness(schema: GenericSchema | NodeSchema, attr_name: str) -> str | None:
+        """Check if an attribute is referenced in hfid or uniqueness constraints.
+
+        Returns a description of the conflict, or None if no conflict.
+        """
+        if schema.human_friendly_id:
+            for hfid_path in schema.human_friendly_id:
+                # hfid paths use __ separators, the first segment is the attribute name
+                if hfid_path.split("__")[0] == attr_name:
+                    return f"attribute '{attr_name}' is referenced in human_friendly_id of '{schema.kind}'"
+
+        if schema.uniqueness_constraints:
+            for constraint in schema.uniqueness_constraints:
+                for constraint_path in constraint:
+                    if constraint_path.split("__")[0] == attr_name:
+                        return f"attribute '{attr_name}' is referenced in uniqueness_constraints of '{schema.kind}'"
+
+        return None
+
     async def check(self, request: SchemaConstraintValidatorRequest) -> list[GroupedDataPaths]:
         grouped_data_paths_list: list[GroupedDataPaths] = []
         if not request.schema_path.field_name:
             raise ValueError("field_name is not defined")
         attribute_schema = request.node_schema.get_attribute(name=request.schema_path.field_name)
         if attribute_schema.optional is True:
+            # Mandatory→optional: check hfid/uniqueness constraints are not referencing this attribute
+            conflict = self._attr_in_hfid_or_uniqueness(
+                schema=request.node_schema, attr_name=request.schema_path.field_name
+            )
+            if conflict:
+                gdp = GroupedDataPaths()
+                gdp.add_data_path(
+                    DataPath(
+                        branch=request.branch.name,
+                        path_type=PathType.ATTRIBUTE,
+                        node_id="",
+                        field_name=request.schema_path.field_name,
+                        kind=request.node_schema.kind,
+                        value=conflict,
+                    ),
+                )
+                grouped_data_paths_list.append(gdp)
+
+            # Also check all inheriting nodes for generics
+            if isinstance(request.node_schema, GenericSchema):
+                for node_kind in request.node_schema.used_by:
+                    node_schema = request.schema_branch.get_node(name=node_kind, duplicate=False)
+                    child_conflict = self._attr_in_hfid_or_uniqueness(
+                        schema=node_schema, attr_name=request.schema_path.field_name
+                    )
+                    if child_conflict:
+                        gdp = GroupedDataPaths()
+                        gdp.add_data_path(
+                            DataPath(
+                                branch=request.branch.name,
+                                path_type=PathType.ATTRIBUTE,
+                                node_id="",
+                                field_name=request.schema_path.field_name,
+                                kind=node_schema.kind,
+                                value=child_conflict,
+                            ),
+                        )
+                        grouped_data_paths_list.append(gdp)
+
+            return grouped_data_paths_list
+
+        # For generic schemas, validate across all inheriting node types
+        # since generics are abstract and have no direct instances.
+        if isinstance(request.node_schema, GenericSchema):
+            for node_kind in request.node_schema.used_by:
+                node_schema = request.schema_branch.get_node(name=node_kind, duplicate=False)
+                node_attr = node_schema.get_attribute(name=request.schema_path.field_name)
+                # Skip child nodes that locally override this attribute to optional
+                if node_attr.optional is True:
+                    continue
+                schema_path = request.schema_path.model_copy(update={"schema_kind": node_schema.kind})
+                for query_class in self.query_classes:
+                    query = await query_class.init(
+                        db=self.db, branch=self.branch, node_schema=node_schema, schema_path=schema_path
+                    )
+                    await query.execute(db=self.db)
+                    grouped_data_paths_list.append(await query.get_paths())
             return grouped_data_paths_list
 
         for query_class in self.query_classes:

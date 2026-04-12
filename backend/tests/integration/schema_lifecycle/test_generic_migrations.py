@@ -9,10 +9,14 @@ from infrahub.core import registry
 from infrahub.core.branch import Branch
 from infrahub.core.constants import OBJECT_TEMPLATE_RELATIONSHIP_NAME, PROFILES_RELATIONSHIP_NAME, HashableModelState
 from infrahub.core.manager import NodeManager
+from infrahub.core.migrations import MIGRATION_MAP
+from infrahub.core.models import SchemaUpdateValidationResult
 from infrahub.core.node import Node
 from infrahub.core.relationship.model import RelationshipManager
+from infrahub.core.schema import SchemaRoot
 from infrahub.core.schema.node_schema import NodeSchema
 from infrahub.core.timestamp import Timestamp
+from infrahub.core.validators import CONSTRAINT_VALIDATOR_MAP
 from infrahub.database import InfrahubDatabase
 from infrahub.database.validation import verify_no_duplicate_relationships, verify_no_edges_added_after_node_delete
 from tests.helpers.db_validation import validate_no_duplicate_attributes
@@ -1790,6 +1794,358 @@ RETURN node_kind, relationship_names, collect(anv.value) AS attribute_names
                     f"Node schema '{node_kind}' is missing a relationship to local attribute '{missing_local_attr}'"
                 )
         return errors
+
+
+class TestSchemaLifecycleGenericOptionalChange(TestSchemaLifecycleBase):
+    """Test changing attribute optional on a generic schema node and verifying propagation to child nodes."""
+
+    @pytest.fixture(scope="class")
+    def schema_generic_with_mandatory(self) -> dict[str, Any]:
+        return {
+            "name": "OptGeneric",
+            "namespace": "Testing",
+            "attributes": [
+                {"name": "name", "kind": "Text"},
+                {"name": "mandatory_field", "kind": "Text", "optional": False},
+            ],
+        }
+
+    @pytest.fixture(scope="class")
+    def schema_child_one_base(self) -> dict[str, Any]:
+        return {
+            "name": "ChildOne",
+            "namespace": "Testing",
+            "inherit_from": ["TestingOptGeneric"],
+        }
+
+    @pytest.fixture(scope="class")
+    def schema_child_two_base(self) -> dict[str, Any]:
+        return {
+            "name": "ChildTwo",
+            "namespace": "Testing",
+            "inherit_from": ["TestingOptGeneric"],
+        }
+
+    @pytest.fixture(scope="class")
+    def schema_step_initial(
+        self,
+        schema_generic_with_mandatory: dict[str, Any],
+        schema_child_one_base: dict[str, Any],
+        schema_child_two_base: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "version": "1.0",
+            "generics": [schema_generic_with_mandatory],
+            "nodes": [schema_child_one_base, schema_child_two_base],
+        }
+
+    @pytest.fixture(scope="class")
+    async def initial_dataset(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        initialize_registry: None,
+        schema_step_initial: dict[str, Any],
+    ) -> dict[str, Node]:
+        await load_schema(db=db, schema=schema_step_initial)
+
+        child_one = await Node.init(schema="TestingChildOne", db=db)
+        await child_one.new(db=db, name="c1", mandatory_field="value1")
+        await child_one.save(db=db)
+
+        child_two = await Node.init(schema="TestingChildTwo", db=db)
+        await child_two.new(db=db, name="c2", mandatory_field="value2")
+        await child_two.save(db=db)
+
+        return {"child_one": child_one, "child_two": child_two}
+
+    async def test_mandatory_to_optional_on_generic(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        initial_dataset: dict[str, Node],
+        schema_generic_with_mandatory: dict[str, Any],
+        schema_child_one_base: dict[str, Any],
+        schema_child_two_base: dict[str, Any],
+    ) -> None:
+        """Changing optional from false to true on a generic attribute should propagate to all child nodes."""
+        updated_generic = deepcopy(schema_generic_with_mandatory)
+        updated_generic["attributes"][1]["optional"] = True
+
+        updated_schema = {
+            "version": "1.0",
+            "generics": [updated_generic],
+            "nodes": [schema_child_one_base, schema_child_two_base],
+        }
+        await load_schema(db=db, schema=updated_schema)
+
+        # Verify the generic attribute is now optional
+        schema_branch = registry.schema.get_schema_branch(name=default_branch.name)
+        generic_schema = schema_branch.get(name="TestingOptGeneric", duplicate=False)
+        generic_attr = generic_schema.get_attribute("mandatory_field")
+        assert generic_attr.optional is True, "Generic attribute should be optional after update"
+
+        # Verify child node schemas inherited the optional change
+        child_one_schema = schema_branch.get(name="TestingChildOne", duplicate=False)
+        child_one_attr = child_one_schema.get_attribute("mandatory_field")
+        assert child_one_attr.optional is True, "ChildOne inherited attribute should be optional"
+
+        child_two_schema = schema_branch.get(name="TestingChildTwo", duplicate=False)
+        child_two_attr = child_two_schema.get_attribute("mandatory_field")
+        assert child_two_attr.optional is True, "ChildTwo inherited attribute should be optional"
+
+        # Verify we can now create a child node WITHOUT the previously mandatory field
+        child_three = await Node.init(schema="TestingChildOne", db=db)
+        await child_three.new(db=db, name="c3")
+        await child_three.save(db=db)
+
+    async def test_optional_to_mandatory_blocked_with_nulls(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        initial_dataset: dict[str, Node],
+        schema_generic_with_mandatory: dict[str, Any],
+        schema_child_one_base: dict[str, Any],
+        schema_child_two_base: dict[str, Any],
+    ) -> None:
+        """Changing optional from true back to false on a generic should be blocked when instances have null values."""
+        # First make the field optional (from previous test, it's already optional)
+        schema_branch = registry.schema.get_schema_branch(name=default_branch.name)
+        generic_schema = schema_branch.get(name="TestingOptGeneric", duplicate=False)
+        generic_attr = generic_schema.get_attribute("mandatory_field")
+        assert generic_attr.optional is True, "Precondition: attribute should be optional from previous test"
+
+        # Now try to make it mandatory again — but there's a node (c3) with null value
+        reverted_generic = deepcopy(schema_generic_with_mandatory)
+        # schema_generic_with_mandatory has optional=False by default
+
+        reverted_schema_root = SchemaRoot(
+            version="1.0", generics=[reverted_generic], nodes=[schema_child_one_base, schema_child_two_base]
+        )
+
+        candidate = schema_branch.duplicate()
+        candidate.load_schema(schema=reverted_schema_root)
+        candidate.process()
+        diff = candidate.diff(schema_branch)
+
+        result = SchemaUpdateValidationResult.init(diff=diff, schema=candidate)
+        result.validate_all(migration_map=MIGRATION_MAP, validator_map=CONSTRAINT_VALIDATOR_MAP)
+
+        # The result should have constraints for the optional change
+        optional_constraints = [c for c in result.constraints if c.constraint_name == "attribute.optional.update"]
+        assert len(optional_constraints) > 0, "Should generate constraint for optional→mandatory change on generic"
+
+
+class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase):
+    """Test that making a generic attribute optional is blocked when it is in hfid or uniqueness constraints."""
+
+    @pytest.fixture(scope="class")
+    def schema_generic_with_hfid(self) -> dict[str, Any]:
+        return {
+            "name": "HfidGeneric",
+            "namespace": "Testing",
+            "human_friendly_id": ["name__value", "code__value"],
+            "uniqueness_constraints": [["name__value", "code__value"]],
+            "attributes": [
+                {"name": "name", "kind": "Text"},
+                {"name": "code", "kind": "Text"},
+            ],
+        }
+
+    @pytest.fixture(scope="class")
+    def schema_hfid_child_base(self) -> dict[str, Any]:
+        return {
+            "name": "HfidChild",
+            "namespace": "Testing",
+            "inherit_from": ["TestingHfidGeneric"],
+        }
+
+    @pytest.fixture(scope="class")
+    def schema_hfid_step_initial(
+        self,
+        schema_generic_with_hfid: dict[str, Any],
+        schema_hfid_child_base: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "version": "1.0",
+            "generics": [schema_generic_with_hfid],
+            "nodes": [schema_hfid_child_base],
+        }
+
+    @pytest.fixture(scope="class")
+    async def hfid_initial_dataset(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        initialize_registry: None,
+        schema_hfid_step_initial: dict[str, Any],
+    ) -> None:
+        await load_schema(db=db, schema=schema_hfid_step_initial)
+
+    async def test_optional_blocked_when_attr_in_hfid(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        hfid_initial_dataset: None,
+        schema_generic_with_hfid: dict[str, Any],
+        schema_hfid_child_base: dict[str, Any],
+    ) -> None:
+        """Making an attribute optional should be blocked when it is still in hfid."""
+        schema_branch = registry.schema.get_schema_branch(name=default_branch.name)
+
+        # Try to make "code" optional while it's still in hfid and uniqueness_constraints
+        updated_generic = deepcopy(schema_generic_with_hfid)
+        updated_generic["attributes"][1]["optional"] = True
+
+        candidate_schema_root = SchemaRoot(
+            version="1.0", generics=[updated_generic], nodes=[schema_hfid_child_base]
+        )
+        candidate = schema_branch.duplicate()
+        candidate.load_schema(schema=candidate_schema_root)
+        candidate.process()
+        diff = candidate.diff(schema_branch)
+        result = SchemaUpdateValidationResult.init(diff=diff, schema=candidate)
+        result.validate_all(migration_map=MIGRATION_MAP, validator_map=CONSTRAINT_VALIDATOR_MAP)
+
+        # Run the constraint checker
+        from infrahub.core.validators.attribute.optional import AttributeOptionalChecker
+        from infrahub.core.validators.model import SchemaConstraintValidatorRequest
+
+        optional_constraints = [c for c in result.constraints if c.constraint_name == "attribute.optional.update"]
+        assert len(optional_constraints) > 0
+
+        checker = AttributeOptionalChecker(db=db, branch=default_branch)
+        constraint = optional_constraints[0]
+        generic_schema = candidate.get(name=constraint.path.schema_kind, duplicate=False)
+        request = SchemaConstraintValidatorRequest(
+            branch=default_branch,
+            constraint_name=constraint.constraint_name,
+            node_schema=generic_schema,
+            schema_path=constraint.path,
+            schema_branch=candidate,
+        )
+        violations = await checker.check(request=request)
+        # Should have violations because attribute is in hfid/uniqueness_constraints
+        has_violations = any(len(v.get_all_data_paths()) > 0 for v in violations)
+        assert has_violations, "Should report violations when making an hfid/uniqueness attribute optional"
+
+    async def test_optional_allowed_after_removing_constraints(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        hfid_initial_dataset: None,
+        schema_hfid_child_base: dict[str, Any],
+    ) -> None:
+        """Making an attribute optional should succeed when hfid and uniqueness_constraints are removed first."""
+        # Remove hfid and uniqueness_constraints, and make code optional in one update
+        updated_generic: dict[str, Any] = {
+            "name": "HfidGeneric",
+            "namespace": "Testing",
+            "attributes": [
+                {"name": "name", "kind": "Text"},
+                {"name": "code", "kind": "Text", "optional": True},
+            ],
+        }
+
+        updated_schema = {
+            "version": "1.0",
+            "generics": [updated_generic],
+            "nodes": [schema_hfid_child_base],
+        }
+        # This should succeed without errors
+        await load_schema(db=db, schema=updated_schema)
+
+        # Verify the attribute is now optional
+        updated_branch = registry.schema.get_schema_branch(name=default_branch.name)
+        generic = updated_branch.get(name="TestingHfidGeneric", duplicate=False)
+        code_attr = generic.get_attribute("code")
+        assert code_attr.optional is True
+
+        child = updated_branch.get(name="TestingHfidChild", duplicate=False)
+        child_code_attr = child.get_attribute("code")
+        assert child_code_attr.optional is True
+
+
+class TestSchemaLifecycleGenericOptionalOverride(TestSchemaLifecycleBase):
+    """Test that child nodes can override a generic's optional setting."""
+
+    @pytest.fixture(scope="class")
+    def schema_override_generic(self) -> dict[str, Any]:
+        return {
+            "name": "OverrideGeneric",
+            "namespace": "Testing",
+            "attributes": [
+                {"name": "name", "kind": "Text"},
+                {"name": "flexible_field", "kind": "Text", "optional": True},
+            ],
+        }
+
+    @pytest.fixture(scope="class")
+    def schema_override_child_mandatory(self) -> dict[str, Any]:
+        """Child that overrides the generic's optional attribute to mandatory."""
+        return {
+            "name": "OverrideChildMandatory",
+            "namespace": "Testing",
+            "inherit_from": ["TestingOverrideGeneric"],
+            "attributes": [{"name": "flexible_field", "kind": "Text", "optional": False}],
+        }
+
+    @pytest.fixture(scope="class")
+    def schema_override_child_inherits(self) -> dict[str, Any]:
+        """Child that inherits the generic's optional setting without override."""
+        return {
+            "name": "OverrideChildInherits",
+            "namespace": "Testing",
+            "inherit_from": ["TestingOverrideGeneric"],
+        }
+
+    @pytest.fixture(scope="class")
+    async def override_initial_dataset(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        initialize_registry: None,
+        schema_override_generic: dict[str, Any],
+        schema_override_child_mandatory: dict[str, Any],
+        schema_override_child_inherits: dict[str, Any],
+    ) -> None:
+        schema = {
+            "version": "1.0",
+            "generics": [schema_override_generic],
+            "nodes": [schema_override_child_mandatory, schema_override_child_inherits],
+        }
+        await load_schema(db=db, schema=schema)
+
+    async def test_child_override_mandatory_while_generic_optional(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        override_initial_dataset: None,
+    ) -> None:
+        """One child overrides to mandatory, another inherits optional from generic."""
+        schema_branch = registry.schema.get_schema_branch(name=default_branch.name)
+
+        # Generic has optional=True
+        generic = schema_branch.get(name="TestingOverrideGeneric", duplicate=False)
+        assert generic.get_attribute("flexible_field").optional is True
+
+        # Child with override has optional=False (mandatory)
+        mandatory_child = schema_branch.get(name="TestingOverrideChildMandatory", duplicate=False)
+        assert mandatory_child.get_attribute("flexible_field").optional is False
+
+        # Child without override inherits optional=True
+        inherits_child = schema_branch.get(name="TestingOverrideChildInherits", duplicate=False)
+        assert inherits_child.get_attribute("flexible_field").optional is True
+
+        # Create instance of inheriting child WITHOUT the field (should succeed)
+        c1 = await Node.init(schema="TestingOverrideChildInherits", db=db)
+        await c1.new(db=db, name="inherit-c1")
+        await c1.save(db=db)
+
+        # Create instance of mandatory child WITH the field (should succeed)
+        c2 = await Node.init(schema="TestingOverrideChildMandatory", db=db)
+        await c2.new(db=db, name="mandatory-c2", flexible_field="required_value")
+        await c2.save(db=db)
 
 
 class TestSchemaLifecycleGenericUpdatedWithLegacyDuplicates(SchemaLifecycleGenericBase):
