@@ -19,15 +19,21 @@ if TYPE_CHECKING:
 class AttributeOptionalUpdateValidatorQuery(AttributeSchemaValidatorQuery):
     name: str = "attribute_constraints_optional_validator"
 
+    def __init__(self, excluded_kinds: list[str] | None = None, **kwargs: Any) -> None:
+        self.excluded_kinds = excluded_kinds or []
+        super().__init__(**kwargs)
+
     async def query_init(self, db: InfrahubDatabase, **kwargs: dict[str, Any]) -> None:  # noqa: ARG002
         branch_filter, branch_params = self.branch.get_query_filter_path(at=self.at.to_string())
         self.params.update(branch_params)
 
         self.params["attr_name"] = self.attribute_schema.name
         self.params["null_value"] = NULL_VALUE
+        self.params["excluded_kinds"] = self.excluded_kinds
 
         query = """
         MATCH (n:%(node_kind)s)
+        WHERE NONE(kind IN $excluded_kinds WHERE kind IN labels(n))
         CALL (n) {
             MATCH path = (root:Root)<-[rr:IS_PART_OF]-(n)-[ra:HAS_ATTRIBUTE]-(:Attribute { name: $attr_name } )-[rv:HAS_VALUE]-(av:AttributeValue)
             WHERE all(
@@ -44,7 +50,7 @@ class AttributeOptionalUpdateValidatorQuery(AttributeSchemaValidatorQuery):
         """ % {"branch_filter": branch_filter, "node_kind": self.node_schema.kind}
 
         self.add_to_query(query)
-        self.return_labels = ["node.uuid", "value_relationship"]
+        self.return_labels = ["node.uuid", "node.kind", "value_relationship"]
 
     async def get_paths(self) -> GroupedDataPaths:
         grouped_data_paths = GroupedDataPaths()
@@ -55,7 +61,7 @@ class AttributeOptionalUpdateValidatorQuery(AttributeSchemaValidatorQuery):
                     path_type=PathType.ATTRIBUTE,
                     node_id=str(result.get("node.uuid")),
                     field_name=self.attribute_schema.name,
-                    kind=self.node_schema.kind,
+                    kind=str(result.get("node.kind")),
                 ),
             )
 
@@ -84,27 +90,26 @@ class AttributeOptionalChecker(ConstraintCheckerInterface):
         if attribute_schema.optional is True:
             return grouped_data_paths_list
 
-        # For generic schemas, validate across all inheriting node types
-        # since generics are abstract and have no direct instances.
+        # For generic schemas, a single MATCH on the generic's kind label finds instances of all
+        # inheriting node types. Exclude child nodes that locally override the attribute to optional.
+        excluded_kinds: list[str] = []
         if isinstance(request.node_schema, GenericSchema):
-            for node_kind in request.node_schema.used_by:
-                node_schema = request.schema_branch.get_node(name=node_kind, duplicate=False)
-                node_attr = node_schema.get_attribute(name=request.schema_path.field_name)
-                # Skip child nodes that locally override this attribute to optional
-                if node_attr.optional is True:
-                    continue
-                schema_path = request.schema_path.model_copy(update={"schema_kind": node_schema.kind})
-                for query_class in self.query_classes:
-                    query = await query_class.init(
-                        db=self.db, branch=self.branch, node_schema=node_schema, schema_path=schema_path
-                    )
-                    await query.execute(db=self.db)
-                    grouped_data_paths_list.append(await query.get_paths())
-            return grouped_data_paths_list
+            excluded_kinds = [
+                node_kind
+                for node_kind in request.node_schema.used_by
+                if request.schema_branch.get_node(name=node_kind, duplicate=False)
+                .get_attribute(name=request.schema_path.field_name)
+                .optional
+                is True
+            ]
 
         for query_class in self.query_classes:
             query = await query_class.init(
-                db=self.db, branch=self.branch, node_schema=request.node_schema, schema_path=request.schema_path
+                db=self.db,
+                branch=self.branch,
+                node_schema=request.node_schema,
+                schema_path=request.schema_path,
+                excluded_kinds=excluded_kinds,
             )
             await query.execute(db=self.db)
             grouped_data_paths_list.append(await query.get_paths())
