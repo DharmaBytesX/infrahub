@@ -1921,8 +1921,12 @@ class TestSchemaLifecycleGenericOptionalChange(TestSchemaLifecycleBase):
         reverted_generic = deepcopy(schema_generic_with_mandatory)
         # schema_generic_with_mandatory has optional=False by default
 
-        reverted_schema_root = SchemaRoot(
-            version="1.0", generics=[reverted_generic], nodes=[schema_child_one_base, schema_child_two_base]
+        reverted_schema_root = SchemaRoot.model_validate(
+            {
+                "version": "1.0",
+                "generics": [reverted_generic],
+                "nodes": [schema_child_one_base, schema_child_two_base],
+            }
         )
 
         candidate = schema_branch.duplicate()
@@ -1999,7 +2003,9 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         updated_generic = deepcopy(schema_generic_with_hfid)
         updated_generic["attributes"][1]["optional"] = True
 
-        candidate_schema_root = SchemaRoot(version="1.0", generics=[updated_generic], nodes=[schema_hfid_child_base])
+        candidate_schema_root = SchemaRoot.model_validate(
+            {"version": "1.0", "generics": [updated_generic], "nodes": [schema_hfid_child_base]}
+        )
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
         # Schema processing should raise ValidationError — attribute is in hfid/uniqueness_constraints but set to optional
@@ -2022,7 +2028,9 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         # Same invalid schema as in test_optional_blocked_when_attr_in_hfid
         updated_generic = deepcopy(schema_generic_with_hfid)
         updated_generic["attributes"][1]["optional"] = True
-        candidate_schema_root = SchemaRoot(version="1.0", generics=[updated_generic], nodes=[schema_hfid_child_base])
+        candidate_schema_root = SchemaRoot.model_validate(
+            {"version": "1.0", "generics": [updated_generic], "nodes": [schema_hfid_child_base]}
+        )
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
 
@@ -2041,6 +2049,7 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
             # Sanity check: the invalid state actually exists in the processed schema
             generic = candidate_bypass.get(name="TestingHfidGeneric", duplicate=False)
             assert generic.get_attribute("code").optional is True
+            assert generic.human_friendly_id is not None
             assert "code__value" in generic.human_friendly_id
         finally:
             config.SETTINGS.main.schema_strict_mode = strict_mode_original
