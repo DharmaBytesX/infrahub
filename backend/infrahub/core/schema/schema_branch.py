@@ -1015,7 +1015,13 @@ class SchemaBranch:
 
         Attributes used in these constraints must either be mandatory (optional=False) or have a
         default_value so that every instance is guaranteed to have a value for the attribute.
+
+        This validation is skipped when schema strict mode is disabled to allow deployments with
+        pre-existing violations to continue operating while they migrate their schemas.
         """
+        if not config.SETTINGS.main.schema_strict_mode:
+            return
+
         for name in self.generic_names_without_templates + self.node_names:
             node_schema = self.get(name=name, duplicate=False)
 
@@ -1034,7 +1040,8 @@ class SchemaBranch:
                     raise ValidationError(
                         f"Attribute '{attr.name}' of '{node_schema.kind}' is optional with no default_value but is "
                         f"referenced in human_friendly_id or uniqueness_constraints. Attributes used in these "
-                        f"constraints must be mandatory or have a default_value."
+                        f"constraints must be mandatory or have a default_value. "
+                        f"To bypass this check while migrating your schema, set INFRAHUB_SCHEMA_STRICT_MODE=false."
                     )
 
     def validate_required_relationships(self) -> None:

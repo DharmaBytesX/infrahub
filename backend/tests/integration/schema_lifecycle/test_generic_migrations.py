@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from infrahub_sdk.client import InfrahubClient
 
+from infrahub import config
 from infrahub.core import registry
 from infrahub.core.branch import Branch
 from infrahub.core.constants import OBJECT_TEMPLATE_RELATIONSHIP_NAME, PROFILES_RELATIONSHIP_NAME, HashableModelState
@@ -2008,6 +2009,45 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
             ValidationError, match="is optional with no default_value but is referenced in human_friendly_id"
         ):
             candidate.process()
+
+    async def test_strict_mode_disabled_bypasses_validation(
+        self,
+        db: InfrahubDatabase,
+        default_branch: Branch,
+        hfid_initial_dataset: None,
+        schema_generic_with_hfid: dict[str, Any],
+        schema_hfid_child_base: dict[str, Any],
+    ) -> None:
+        """Disabling schema strict mode should allow schemas that violate the hfid/uniqueness invariant."""
+        schema_branch = registry.schema.get_schema_branch(name=default_branch.name)
+
+        # Same invalid schema as in test_optional_blocked_when_attr_in_hfid
+        updated_generic = deepcopy(schema_generic_with_hfid)
+        updated_generic["attributes"][1]["optional"] = True
+        candidate_schema_root = SchemaRoot(
+            version="1.0", generics=[updated_generic], nodes=[schema_hfid_child_base]
+        )
+        candidate = schema_branch.duplicate()
+        candidate.load_schema(schema=candidate_schema_root)
+
+        # With strict mode ON (default), processing raises
+        assert config.SETTINGS.main.schema_strict_mode is True
+        with pytest.raises(ValidationError, match="is optional with no default_value"):
+            candidate.process()
+
+        # With strict mode OFF, the same schema processes without error
+        strict_mode_original = config.SETTINGS.main.schema_strict_mode
+        config.SETTINGS.main.schema_strict_mode = False
+        try:
+            candidate_bypass = schema_branch.duplicate()
+            candidate_bypass.load_schema(schema=candidate_schema_root)
+            candidate_bypass.process()  # should not raise
+            # Sanity check: the invalid state actually exists in the processed schema
+            generic = candidate_bypass.get(name="TestingHfidGeneric", duplicate=False)
+            assert generic.get_attribute("code").optional is True
+            assert "code__value" in generic.human_friendly_id
+        finally:
+            config.SETTINGS.main.schema_strict_mode = strict_mode_original
 
     async def test_optional_allowed_when_attr_has_default(
         self,
