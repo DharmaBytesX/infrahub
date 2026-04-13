@@ -69,8 +69,6 @@ class AttributeOptionalUpdateValidatorQuery(AttributeSchemaValidatorQuery):
 
 
 class AttributeOptionalChecker(ConstraintCheckerInterface):
-    query_classes = [AttributeOptionalUpdateValidatorQuery]
-
     def __init__(self, db: InfrahubDatabase, branch: Branch | None = None) -> None:
         self.db = db
         self.branch = branch
@@ -83,12 +81,11 @@ class AttributeOptionalChecker(ConstraintCheckerInterface):
         return request.constraint_name == self.name
 
     async def check(self, request: SchemaConstraintValidatorRequest) -> list[GroupedDataPaths]:
-        grouped_data_paths_list: list[GroupedDataPaths] = []
         if not request.schema_path.field_name:
             raise ValueError("field_name is not defined")
         attribute_schema = request.node_schema.get_attribute(name=request.schema_path.field_name)
         if attribute_schema.optional is True:
-            return grouped_data_paths_list
+            return []
 
         # For generic schemas, a single MATCH on the generic's kind label finds instances of all
         # inheriting node types. Exclude child nodes that locally override the attribute to optional.
@@ -103,14 +100,12 @@ class AttributeOptionalChecker(ConstraintCheckerInterface):
                 is True
             ]
 
-        for query_class in self.query_classes:
-            query = await query_class.init(
-                db=self.db,
-                branch=self.branch,
-                node_schema=request.node_schema,
-                schema_path=request.schema_path,
-                excluded_kinds=excluded_kinds,
-            )
-            await query.execute(db=self.db)
-            grouped_data_paths_list.append(await query.get_paths())
-        return grouped_data_paths_list
+        query = await AttributeOptionalUpdateValidatorQuery.init(
+            db=self.db,
+            branch=self.branch,
+            node_schema=request.node_schema,
+            schema_path=request.schema_path,
+            excluded_kinds=excluded_kinds,
+        )
+        await query.execute(db=self.db)
+        return [await query.get_paths()]
