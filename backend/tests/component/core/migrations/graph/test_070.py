@@ -39,18 +39,14 @@ class TestMigration070(TestInfrahubApp):
         response = await client.schema.load(schemas=[violating_schema])
         assert len(response.errors) == 0, response.errors
 
-    async def test_migration_clean_and_with_violations(
-        self, db: InfrahubDatabase, client: InfrahubClient
-    ) -> None:
+    async def test_migration_clean_and_with_violations(self, db: InfrahubDatabase, client: InfrahubClient) -> None:
         strict_mode_original = config.SETTINGS.main.schema_strict_mode
 
         try:
             # Baseline: the default schema has no violations, migration should report nothing.
             migration = Migration070(db=db)
             baseline_result = await migration.execute(migration_input=MigrationInput(db=db))
-            assert not baseline_result.errors, (
-                f"Expected no errors on baseline schema, got: {baseline_result.errors}"
-            )
+            assert not baseline_result.errors, f"Expected no errors on baseline schema, got: {baseline_result.errors}"
 
             # Simulate a pre-existing deployment by loading a violating schema with strict mode off.
             config.SETTINGS.main.schema_strict_mode = False
@@ -66,11 +62,7 @@ class TestMigration070(TestInfrahubApp):
             )
 
             violation_reports = execution_result.errors[1:]
-            matching = [
-                msg
-                for msg in violation_reports
-                if "'serial'" in msg and "TestingGadget" in msg
-            ]
+            matching = [msg for msg in violation_reports if "'serial'" in msg and "TestingGadget" in msg]
             assert matching, f"Expected a violation for 'serial' of TestingGadget, got: {violation_reports}"
         finally:
             config.SETTINGS.main.schema_strict_mode = strict_mode_original

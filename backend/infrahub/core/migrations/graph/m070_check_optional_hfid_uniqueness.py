@@ -51,9 +51,7 @@ class Migration070(InternalSchemaMigration):
                     )
                 if node_schema.uniqueness_constraints:
                     for constraint in node_schema.uniqueness_constraints:
-                        constrained_attr_names.update(
-                            constraint_path.split("__")[0] for constraint_path in constraint
-                        )
+                        constrained_attr_names.update(constraint_path.split("__")[0] for constraint_path in constraint)
 
                 if not constrained_attr_names:
                     continue

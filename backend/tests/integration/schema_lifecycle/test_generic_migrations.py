@@ -1999,9 +1999,7 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         updated_generic = deepcopy(schema_generic_with_hfid)
         updated_generic["attributes"][1]["optional"] = True
 
-        candidate_schema_root = SchemaRoot(
-            version="1.0", generics=[updated_generic], nodes=[schema_hfid_child_base]
-        )
+        candidate_schema_root = SchemaRoot(version="1.0", generics=[updated_generic], nodes=[schema_hfid_child_base])
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
         # Schema processing should raise ValidationError — attribute is in hfid/uniqueness_constraints but set to optional
@@ -2024,9 +2022,7 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         # Same invalid schema as in test_optional_blocked_when_attr_in_hfid
         updated_generic = deepcopy(schema_generic_with_hfid)
         updated_generic["attributes"][1]["optional"] = True
-        candidate_schema_root = SchemaRoot(
-            version="1.0", generics=[updated_generic], nodes=[schema_hfid_child_base]
-        )
+        candidate_schema_root = SchemaRoot(version="1.0", generics=[updated_generic], nodes=[schema_hfid_child_base])
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
 
