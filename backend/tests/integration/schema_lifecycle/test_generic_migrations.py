@@ -19,6 +19,7 @@ from infrahub.core.timestamp import Timestamp
 from infrahub.core.validators import CONSTRAINT_VALIDATOR_MAP
 from infrahub.database import InfrahubDatabase
 from infrahub.database.validation import verify_no_duplicate_relationships, verify_no_edges_added_after_node_delete
+from infrahub.exceptions import ValidationError
 from tests.helpers.db_validation import validate_no_duplicate_attributes
 
 from ..shared import load_schema
@@ -1990,7 +1991,7 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         schema_generic_with_hfid: dict[str, Any],
         schema_hfid_child_base: dict[str, Any],
     ) -> None:
-        """Making an attribute optional should be blocked when it is still in hfid."""
+        """Making an attribute optional should be blocked when it is still in hfid/uniqueness_constraints."""
         schema_branch = registry.schema.get_schema_branch(name=default_branch.name)
 
         # Try to make "code" optional while it's still in hfid and uniqueness_constraints
@@ -2002,68 +2003,48 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         )
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
-        candidate.process()
-        diff = candidate.diff(schema_branch)
-        result = SchemaUpdateValidationResult.init(diff=diff, schema=candidate)
-        result.validate_all(migration_map=MIGRATION_MAP, validator_map=CONSTRAINT_VALIDATOR_MAP)
+        # Schema processing should raise ValidationError — attribute is in hfid/uniqueness_constraints but set to optional
+        with pytest.raises(
+            ValidationError, match="is optional with no default_value but is referenced in human_friendly_id"
+        ):
+            candidate.process()
 
-        # Run the constraint checker
-        from infrahub.core.validators.attribute.optional import AttributeOptionalChecker
-        from infrahub.core.validators.model import SchemaConstraintValidatorRequest
-
-        optional_constraints = [c for c in result.constraints if c.constraint_name == "attribute.optional.update"]
-        assert len(optional_constraints) > 0
-
-        checker = AttributeOptionalChecker(db=db, branch=default_branch)
-        constraint = optional_constraints[0]
-        generic_schema = candidate.get(name=constraint.path.schema_kind, duplicate=False)
-        request = SchemaConstraintValidatorRequest(
-            branch=default_branch,
-            constraint_name=constraint.constraint_name,
-            node_schema=generic_schema,
-            schema_path=constraint.path,
-            schema_branch=candidate,
-        )
-        violations = await checker.check(request=request)
-        # Should have violations because attribute is in hfid/uniqueness_constraints
-        has_violations = any(len(v.get_all_data_paths()) > 0 for v in violations)
-        assert has_violations, "Should report violations when making an hfid/uniqueness attribute optional"
-
-    async def test_optional_allowed_after_removing_constraints(
+    async def test_optional_allowed_when_attr_has_default(
         self,
         db: InfrahubDatabase,
         default_branch: Branch,
-        hfid_initial_dataset: None,
-        schema_hfid_child_base: dict[str, Any],
+        initialize_registry: None,
     ) -> None:
-        """Making an attribute optional should succeed when hfid and uniqueness_constraints are removed first."""
-        # Remove hfid and uniqueness_constraints, and make code optional in one update
-        updated_generic: dict[str, Any] = {
-            "name": "HfidGeneric",
+        """An optional attribute in hfid/uniqueness_constraints is allowed when it has a default_value."""
+        generic_with_default: dict[str, Any] = {
+            "name": "DefaultGeneric",
             "namespace": "Testing",
+            "human_friendly_id": ["name__value", "status__value"],
             "attributes": [
                 {"name": "name", "kind": "Text"},
-                {"name": "code", "kind": "Text", "optional": True},
+                # status is optional=True (via process_default_values since default_value is set)
+                # but is safe in hfid because it always has a value
+                {"name": "status", "kind": "Text", "default_value": "active"},
             ],
         }
-
-        updated_schema = {
-            "version": "1.0",
-            "generics": [updated_generic],
-            "nodes": [schema_hfid_child_base],
+        child: dict[str, Any] = {
+            "name": "DefaultChild",
+            "namespace": "Testing",
+            "inherit_from": ["TestingDefaultGeneric"],
         }
-        # This should succeed without errors
-        await load_schema(db=db, schema=updated_schema)
+        schema = {
+            "version": "1.0",
+            "generics": [generic_with_default],
+            "nodes": [child],
+        }
+        # Should succeed — status has a default_value, so it's always populated
+        await load_schema(db=db, schema=schema)
 
-        # Verify the attribute is now optional
-        updated_branch = registry.schema.get_schema_branch(name=default_branch.name)
-        generic = updated_branch.get(name="TestingHfidGeneric", duplicate=False)
-        code_attr = generic.get_attribute("code")
-        assert code_attr.optional is True
-
-        child = updated_branch.get(name="TestingHfidChild", duplicate=False)
-        child_code_attr = child.get_attribute("code")
-        assert child_code_attr.optional is True
+        schema_branch = registry.schema.get_schema_branch(name=default_branch.name)
+        generic = schema_branch.get(name="TestingDefaultGeneric", duplicate=False)
+        status_attr = generic.get_attribute("status")
+        assert status_attr.optional is True
+        assert status_attr.default_value == "active"
 
 
 class TestSchemaLifecycleGenericOptionalOverride(TestSchemaLifecycleBase):
