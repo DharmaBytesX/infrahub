@@ -643,7 +643,7 @@ def do_car_person_schema_unregistered() -> SchemaRoot:
                 "branch": BranchSupportType.AWARE.value,
                 "attributes": [
                     {"name": "name", "kind": "Text", "unique": True},
-                    {"name": "nbr_seats", "kind": "Number", "optional": True},
+                    {"name": "nbr_seats", "kind": "Number", "optional": True, "default_value": 0},
                     {"name": "color", "kind": "Text", "default_value": "#444444", "max_length": 7, "optional": True},
                     {"name": "is_electric", "kind": "Boolean", "optional": True},
                     {

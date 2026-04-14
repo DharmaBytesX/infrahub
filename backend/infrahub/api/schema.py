@@ -171,11 +171,10 @@ def evaluate_candidate_schemas(
 
         candidate_schema.load_schema(schema=schema)
         candidate_schema.process()
-        candidate_schema.validate_optional_against_hfid_and_uniqueness()
 
         schema_diff = branch_schema.diff(other=candidate_schema)
         candidate_schema.validate_node_deletions(diff=schema_diff)
-    except (ValueError, ValidationError) as exc:
+    except ValueError as exc:
         raise SchemaNotValidError(message=str(exc)) from exc
 
     result = branch_schema.validate_update(other=candidate_schema, diff=schema_diff)

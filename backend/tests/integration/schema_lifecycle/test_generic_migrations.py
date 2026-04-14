@@ -2015,12 +2015,11 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         )
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
-        candidate.process()
-        # Validation should raise ValidationError — attribute is in hfid/uniqueness_constraints but set to optional
+        # Schema processing should raise ValidationError — attribute is in hfid/uniqueness_constraints but set to optional
         with pytest.raises(
             ValidationError, match="is optional with no default_value but is referenced in human_friendly_id"
         ):
-            candidate.validate_optional_against_hfid_and_uniqueness()
+            candidate.process()
 
     async def test_strict_mode_disabled_bypasses_validation(
         self,
@@ -2042,20 +2041,18 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
 
-        # With strict mode ON (default), validation raises
+        # With strict mode ON (default), processing raises
         assert config.SETTINGS.main.schema_strict_mode is True
-        candidate.process()
         with pytest.raises(ValidationError, match="is optional with no default_value"):
-            candidate.validate_optional_against_hfid_and_uniqueness()
+            candidate.process()
 
-        # With strict mode OFF, validation is bypassed
+        # With strict mode OFF, the same schema processes without error
         strict_mode_original = config.SETTINGS.main.schema_strict_mode
         config.SETTINGS.main.schema_strict_mode = False
         try:
             candidate_bypass = schema_branch.duplicate()
             candidate_bypass.load_schema(schema=candidate_schema_root)
-            candidate_bypass.process()
-            candidate_bypass.validate_optional_against_hfid_and_uniqueness()  # should not raise
+            candidate_bypass.process()  # should not raise
             # Sanity check: the invalid state actually exists in the processed schema
             generic = candidate_bypass.get(name="TestingHfidGeneric", duplicate=False)
             assert generic.get_attribute("code").optional is True

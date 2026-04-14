@@ -57,8 +57,8 @@ class TestSchemaLifecycleValidatorMain(TestSchemaLifecycleBase):
             "attributes": [
                 {"name": "name", "kind": "Text"},
                 {"name": "description", "kind": "Text", "optional": True},
-                {"name": "height", "kind": "Number", "optional": True},
-                {"name": "favorite_color", "kind": "Text", "optional": True},
+                {"name": "height", "kind": "Number", "optional": True, "default_value": 0},
+                {"name": "favorite_color", "kind": "Text", "optional": True, "default_value": ""},
             ],
             "relationships": [
                 {"name": "cars", "kind": "Generic", "optional": True, "peer": "TestingCar", "cardinality": "many"}
