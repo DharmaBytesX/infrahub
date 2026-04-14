@@ -23,7 +23,7 @@ class TestSchemaLifecycleBase(TestInfrahubApp):
             "attributes": [
                 {"name": "name", "kind": "Text", "unique": True},
                 {"name": "description", "kind": "Text", "optional": True},
-                {"name": "height", "kind": "Number", "optional": True},
+                {"name": "height", "kind": "Number", "optional": True, "default_value": 0},
             ],
             "relationships": [
                 {"name": "cars", "kind": "Generic", "optional": True, "peer": "TestingCar", "cardinality": "many"}

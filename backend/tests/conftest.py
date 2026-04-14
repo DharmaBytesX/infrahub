@@ -682,7 +682,7 @@ def do_car_person_schema_unregistered() -> SchemaRoot:
                 "uniqueness_constraints": [["name__value"]],
                 "attributes": [
                     {"name": "name", "kind": "Text", "unique": True},
-                    {"name": "height", "kind": "Number", "optional": True},
+                    {"name": "height", "kind": "Number", "optional": True, "default_value": 0},
                 ],
                 "relationships": [
                     {"name": "cars", "peer": "TestCar", "cardinality": "many", "direction": "inbound"},
