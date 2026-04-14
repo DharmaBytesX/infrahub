@@ -56,7 +56,14 @@ class SchemaLifecycleGenericBase(TestSchemaLifecycleBase):
                 {"name": "generic_attr_text", "kind": "Text", "optional": True, "order_weight": 1111},
                 {"name": "generic_attr_num", "kind": "Number", "optional": True, "order_weight": 2222},
                 {"name": "generic_required_attr", "kind": "Text", "optional": False},
-                {"name": "generic_unique_attr", "kind": "Text", "unique": True, "optional": True, "order_weight": 5555},
+                {
+                    "name": "generic_unique_attr",
+                    "kind": "Text",
+                    "unique": True,
+                    "optional": True,
+                    "order_weight": 5555,
+                    "default_value": "",
+                },
             ],
             "relationships": [
                 {
@@ -2008,11 +2015,12 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         )
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
-        # Schema processing should raise ValidationError — attribute is in hfid/uniqueness_constraints but set to optional
+        candidate.process()
+        # Validation should raise ValidationError — attribute is in hfid/uniqueness_constraints but set to optional
         with pytest.raises(
             ValidationError, match="is optional with no default_value but is referenced in human_friendly_id"
         ):
-            candidate.process()
+            candidate.validate_optional_against_hfid_and_uniqueness()
 
     async def test_strict_mode_disabled_bypasses_validation(
         self,
@@ -2034,18 +2042,20 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
 
-        # With strict mode ON (default), processing raises
+        # With strict mode ON (default), validation raises
         assert config.SETTINGS.main.schema_strict_mode is True
+        candidate.process()
         with pytest.raises(ValidationError, match="is optional with no default_value"):
-            candidate.process()
+            candidate.validate_optional_against_hfid_and_uniqueness()
 
-        # With strict mode OFF, the same schema processes without error
+        # With strict mode OFF, validation is bypassed
         strict_mode_original = config.SETTINGS.main.schema_strict_mode
         config.SETTINGS.main.schema_strict_mode = False
         try:
             candidate_bypass = schema_branch.duplicate()
             candidate_bypass.load_schema(schema=candidate_schema_root)
-            candidate_bypass.process()  # should not raise
+            candidate_bypass.process()
+            candidate_bypass.validate_optional_against_hfid_and_uniqueness()  # should not raise
             # Sanity check: the invalid state actually exists in the processed schema
             generic = candidate_bypass.get(name="TestingHfidGeneric", duplicate=False)
             assert generic.get_attribute("code").optional is True

@@ -10,6 +10,6 @@ TICKET = NodeSchema(
     attributes=[
         AttributeSchema(name="title", kind="Text", optional=False),
         AttributeSchema(name="description", kind="TextArea", optional=True),
-        AttributeSchema(name="ticket_id", kind="Number", optional=True, unique=True),
+        AttributeSchema(name="ticket_id", kind="Number", optional=True, unique=True, default_value=0),
     ],
 )

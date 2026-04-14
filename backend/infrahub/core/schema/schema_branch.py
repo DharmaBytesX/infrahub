@@ -669,7 +669,6 @@ class SchemaBranch:
         self.validate_default_filters()
         self.validate_parent_component()
         self.validate_human_friendly_id()
-        self.validate_optional_against_hfid_and_uniqueness()
         self.validate_required_relationships()
         self.validate_inherited_relationships_fields()
 

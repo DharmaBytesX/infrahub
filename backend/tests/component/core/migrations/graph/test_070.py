@@ -44,7 +44,7 @@ class TestMigration070(TestInfrahubApp):
 
         try:
             # Baseline: the default schema has no violations, migration should report nothing.
-            migration = Migration070(db=db)
+            migration = Migration070()
             baseline_result = await migration.execute(migration_input=MigrationInput(db=db))
             assert not baseline_result.errors, f"Expected no errors on baseline schema, got: {baseline_result.errors}"
 
