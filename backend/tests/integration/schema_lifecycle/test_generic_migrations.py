@@ -2016,6 +2016,7 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
         # Schema processing should raise ValidationError — attribute is in hfid/uniqueness_constraints but set to optional
+        config.SETTINGS.main.schema_strict_mode = True
         with pytest.raises(
             ValidationError, match="is optional with no default_value but is referenced in human_friendly_id"
         ):
@@ -2041,8 +2042,8 @@ class TestSchemaLifecycleGenericOptionalWithConstraints(TestSchemaLifecycleBase)
         candidate = schema_branch.duplicate()
         candidate.load_schema(schema=candidate_schema_root)
 
-        # With strict mode ON (default), processing raises
-        assert config.SETTINGS.main.schema_strict_mode is True
+        # With strict mode ON, processing raises
+        config.SETTINGS.main.schema_strict_mode = True
         with pytest.raises(ValidationError, match="is optional with no default_value"):
             candidate.process()
 

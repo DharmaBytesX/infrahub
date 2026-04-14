@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from infrahub_sdk import InfrahubClient
 
-from infrahub import config, lock
+from infrahub import lock
 from infrahub.core import registry
 from infrahub.core.branch import Branch
 from infrahub.core.constants.infrahubkind import GRAPHQLQUERY, GRAPHQLQUERYGROUP
@@ -190,12 +190,7 @@ class TestGetKindsLock(TestInfrahubApp):
     ) -> None:
         car_person_schema_unregistered = deepcopy(car_person_schema_unregistered)
         car_person_schema_unregistered.nodes[1].uniqueness_constraints = [["height__value"]]
-        strict_mode_original = config.SETTINGS.main.schema_strict_mode
-        config.SETTINGS.main.schema_strict_mode = False
-        try:
-            registry.schema.register_schema(schema=car_person_schema_unregistered, branch=default_branch.name)
-        finally:
-            config.SETTINGS.main.schema_strict_mode = strict_mode_original
+        registry.schema.register_schema(schema=car_person_schema_unregistered, branch=default_branch.name)
 
         schema_branch = registry.schema.get_schema_branch(name=default_branch.name)
         person = await create_and_save(db=db, schema="TestPerson", name="John")

@@ -539,6 +539,7 @@ def reload_settings_before_each_module(tmpdir_factory: pytest.TempdirFactory) ->
     # Other settings
     config.SETTINGS.storage.driver = config.StorageDriver.FileSystemStorage
     config.SETTINGS.workflow.driver = config.WorkflowDriver.LOCAL
+    config.SETTINGS.main.schema_strict_mode = False
 
     storage_dir = tmpdir_factory.mktemp("storage")
     config.SETTINGS.storage.local.path_ = Path(storage_dir)
@@ -643,7 +644,7 @@ def do_car_person_schema_unregistered() -> SchemaRoot:
                 "branch": BranchSupportType.AWARE.value,
                 "attributes": [
                     {"name": "name", "kind": "Text", "unique": True},
-                    {"name": "nbr_seats", "kind": "Number", "optional": True, "default_value": 0},
+                    {"name": "nbr_seats", "kind": "Number", "optional": True},
                     {"name": "color", "kind": "Text", "default_value": "#444444", "max_length": 7, "optional": True},
                     {"name": "is_electric", "kind": "Boolean", "optional": True},
                     {
@@ -682,7 +683,7 @@ def do_car_person_schema_unregistered() -> SchemaRoot:
                 "uniqueness_constraints": [["name__value"]],
                 "attributes": [
                     {"name": "name", "kind": "Text", "unique": True},
-                    {"name": "height", "kind": "Number", "optional": True, "default_value": 0},
+                    {"name": "height", "kind": "Number", "optional": True},
                 ],
                 "relationships": [
                     {"name": "cars", "peer": "TestCar", "cardinality": "many", "direction": "inbound"},

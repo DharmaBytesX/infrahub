@@ -1629,12 +1629,7 @@ async def optional_attr_uniqueness_constraint_schema(
         ],
     )
     registry.schema.set(name=node_schema.kind, schema=node_schema, branch=default_branch.name)
-    strict_mode_original = config.SETTINGS.main.schema_strict_mode
-    config.SETTINGS.main.schema_strict_mode = False
-    try:
-        registry.schema.process_schema_branch(name=default_branch.name)
-    finally:
-        config.SETTINGS.main.schema_strict_mode = strict_mode_original
+    registry.schema.process_schema_branch(name=default_branch.name)
     return node_schema
 
 
