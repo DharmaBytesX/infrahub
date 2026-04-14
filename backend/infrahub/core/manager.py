@@ -1165,8 +1165,7 @@ class NodeManager:
             # Attributes
             # --------------------------------------------------------
             if node_id in node_attributes:
-                for attr_name, attr in node_attributes[node_id].attrs.items():
-                    new_node_data[attr_name] = attr
+                new_node_data.update(node_attributes[node_id].attrs)
 
             node_class = identify_node_class(node=node)
             node_branch = await registry.get_branch(db=db, branch=node.branch)
