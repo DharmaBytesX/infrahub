@@ -190,22 +190,24 @@ The custom `InfrahubMySavedViews` returns both views owned by the caller and (in
 
 ## V3 — Shared Saved Views (planned, not in V1 scope)
 
-Extend `CoreSavedView` with sharing attributes; no rework of V2 required.
+Extend `CoreSavedView` with two sharing relationships; no rework of V2 required.
 
 | Addition | Kind | Notes |
 |---|---|---|
-| `visibility` | Text, enum: `private`, `shared` | Default `private`. Determines whether `shared_with_groups` is consulted |
 | `shared_with_groups` | Relationship → `CoreAccountGroup`, `cardinality=MANY` | Members of these groups get read access |
+| `shared_with_accounts` | Relationship → `CoreGenericAccount`, `cardinality=MANY` | Direct share with specific users, no group required |
+
+No `visibility` enum: a view is private iff both share relationships are empty. Single source of truth, and "unshare" is just removing the peer. Sharing remains opt-in per view — there is no bulk folder-level share concept.
 
 Permission model:
 
-- **Read:** owner always; if `visibility=shared`, any member of `shared_with_groups` as well.
+- **Read:** owner always; any account in `shared_with_accounts`; any account that is a member of a group in `shared_with_groups`. Resolved as a single one-hop graph predicate (`account -[:member_of]-> group <-[:shared_with_groups]- view` ∪ `account <-[:shared_with_accounts]- view`), reusing how `CoreAccountGroup.members` is already traversed in `backend/infrahub/auth.py`.
 - **Write (update/delete/share):** owner only.
-- **Fork:** a read-only viewer can duplicate a shared view into a new `CoreSavedView` owned by them. Implemented as a custom mutation `InfrahubSavedViewFork(id)` that clones attributes and re-parents `owner`.
+- **Fork:** a read-only viewer can duplicate a shared view into a new `CoreSavedView` owned by them. Implemented as a custom mutation `InfrahubSavedViewFork(id)` that clones attributes and re-parents `owner`. No native primitive replaces this.
 
-Sharing is opt-in per view (users don't bulk-share a folder). Groups reuse Infrahub's existing `CoreAccountGroup` model — no new grouping concept is introduced.
+Groups reuse Infrahub's existing `CoreAccountGroup` model — no new grouping concept is introduced.
 
-Frontend additions (V3): a "Share with groups…" dialog on views the user owns; read-only indication on views shared in; a "Duplicate to my views" action on shared views.
+Frontend additions (V3): a "Share…" dialog on views the user owns (targets groups and/or users); read-only indication on views shared in; a "Duplicate to my views" action on shared views.
 
 ## Out of Scope
 
@@ -217,6 +219,7 @@ Frontend additions (V3): a "Share with groups…" dialog on views the user owns;
 - **Extra-fields toggle name.** The attribute should match the UI's wording. To be resolved during implementation by locating the current toggle in object and list views.
 - **Debounce window for `last_used_filters` writes.** Suggested starting point: 1 s after the last filter change, with a flush on page navigation.
 - **V2 only — ad-hoc edits on top of a saved view.** Behavior when the user changes a filter while a saved view is active: drop the view selection and fall back to `last_used_filters`, or require an explicit "fork / save as" step. Deferred to V2 design.
+- **V3 only — reuse `LINEAGEOWNER` for `CoreSavedView.owner`.** `CoreRepository`, `CoreAccount`, and others already inherit Infrahub's `LINEAGEOWNER` generic for audit trail. If `CoreSavedView` inherits it, the custom `owner` relationship can be dropped and "created by" comes for free — but only if write authorization can key off the lineage owner cleanly. Needs verification before committing.
 
 ## Migration & Rollout
 
