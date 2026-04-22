@@ -29,6 +29,22 @@ Two separate concerns, two separate entities:
 
 Keeping these distinct prevents the preference node from growing into an unbounded bag of application state.
 
+## Success Criteria
+
+### V1
+
+- Users can set date format, branch-delete default, extra-fields toggle, and filter defaults once and have them persist across devices.
+- Users can remove their preferences to reset to defaults.
+
+### V2
+
+- Users can save ≥1 named view per schema kind and switch between them.
+- Schema graph visualization state is persisted in the backend.
+
+### V3
+
+- A user can share a view with a group and another group member can open it read-only.
+
 ## V1 — User Preferences
 
 ### Backend
@@ -118,7 +134,7 @@ Standard auto-generated `CoreUserPreferenceCreate/Update/Delete` mutations remai
 
 #### Not migrated in V1
 
-- Schema graph visualization state (fold/zoom/positions) stays in `localStorage` for now. A later increment can add a "save view to preferences" action that writes to a new `schema_graph_state` JSON attribute on `CoreUserPreference`. The schema change is additive.
+- Schema graph visualization state (fold/zoom/positions) stays in `localStorage` for V1. V2 moves it to the backend via an additive `schema_graph_state` JSON attribute on `CoreUserPreference`.
 
 ## V2 — Personal Saved Views (planned, not in V1 scope)
 
@@ -141,9 +157,10 @@ Relationships:
 
 ### Interaction with `CoreUserPreference`
 
-Add one attribute to `CoreUserPreference` in V2:
+Add two attributes to `CoreUserPreference` in V2:
 
 - `selected_saved_views` (JSON): map `schema_kind → saved_view_id`. Records which view the user currently has active per kind, so reopening the page restores it.
+- `schema_graph_state` (JSON): fold/zoom/positions and any other per-user schema graph visualization state, migrated off `localStorage`.
 
 Resolution order when rendering a list page (V2):
 
@@ -192,11 +209,7 @@ Frontend additions (V3): a "Share with groups…" dialog on views the user owns;
 
 ## Out of Scope
 
-- Schema graph visualization state in the backend (deferred; additive schema change when wanted).
-- Bulk "reset all preferences to defaults" UI (admin can delete the node).
 - Cross-account preference import/export.
-- Per-branch preferences (preferences are `AGNOSTIC`; they are not branched).
-- Sharing preferences themselves (only saved views will be shareable; preferences remain strictly personal).
 
 ## Open Questions
 
