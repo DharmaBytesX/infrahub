@@ -65,12 +65,11 @@ export const RelationshipInput = React.forwardRef<
     });
   };
 
-  // Re-execute query when offset or searchQuery changes
   useEffect(() => {
     if (open) {
       executeQuery(offset, searchQuery);
     }
-  }, [offset, searchQuery]);
+  }, [open, offset, searchQuery]);
 
   useEffect(() => {
     const newResults =
@@ -119,7 +118,6 @@ export const RelationshipInput = React.forwardRef<
         onOpenAutoFocus={() => {
           setOffset(0);
           setShouldAggregate(false);
-          executeQuery(0, searchQuery);
         }}
       >
         <ComboboxList
