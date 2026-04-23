@@ -69,6 +69,57 @@ Initial attributes:
 
 No attribute is required. A newly-provisioned account has no `CoreUserPreference` node until the frontend writes for the first time.
 
+YAML shape (reference; authoritative source is the Python definition in `account.py`):
+
+```yaml
+# yaml-language-server: $schema=https://schema.infrahub.app/infrahub/schema/latest.json
+version: "1.0"
+nodes:
+  - name: UserPreference
+    namespace: Core
+    label: User Preference
+    description: Per-user UI defaults and implicit state (one per account).
+    branch: agnostic
+    include_in_menu: false
+    generate_profile: false
+    display_label: "Preferences of {{ account__name__value }}"
+    icon: mdi:cog-outline
+    uniqueness_constraints:
+      - ["account"]
+    attributes:
+      - name: date_format
+        kind: Text
+        enum: [iso, us, eu, relative]
+        optional: true
+        order_weight: 1000
+        description: Display format for dates and datetimes.
+      - name: branch_delete_mode
+        kind: Text
+        enum: [local, local_and_git]
+        optional: true
+        order_weight: 1100
+        description: Default selection in the branch-delete dialog.
+      - name: show_extra_fields
+        kind: Boolean
+        optional: true
+        order_weight: 1200
+        description: Default for the "show extra fields" toggle on object/list views.
+      - name: last_used_filters
+        kind: JSON
+        optional: true
+        order_weight: 1300
+        description: Frontend-owned map, schema_kind -> last applied filter params.
+    relationships:
+      - name: account
+        peer: CoreGenericAccount
+        identifier: account__preferences
+        kind: Parent
+        cardinality: one
+        optional: false
+        on_delete: cascade
+        order_weight: 100
+```
+
 #### GraphQL operations
 
 A custom pair hides the "lookup account → find preferences → create or update" plumbing and enforces owner-only access in one place. Implemented in `backend/infrahub/graphql/queries/account.py` and `backend/infrahub/graphql/mutations/account.py`, reusing the `AccountMixin` JWT check already in place.
@@ -155,12 +206,83 @@ Relationships:
 
 - `owner` → `CoreGenericAccount`, `cardinality=ONE`, required, identifier `account__saved_views`
 
+YAML shape (V2, owner-only; V3 extensions in the next section):
+
+```yaml
+# yaml-language-server: $schema=https://schema.infrahub.app/infrahub/schema/latest.json
+version: "1.0"
+nodes:
+  - name: SavedView
+    namespace: Core
+    label: Saved View
+    description: Named filter/sort/column preset for a schema kind.
+    branch: agnostic
+    default_filter: name__value
+    order_by: [schema_kind__value, name__value]
+    human_friendly_id: ["owner__name__value", "schema_kind__value", "name__value"]
+    display_label: "{{ name__value }} ({{ schema_kind__value }})"
+    icon: mdi:bookmark-outline
+    include_in_menu: false
+    uniqueness_constraints:
+      - ["owner", "schema_kind__value", "name__value"]
+    attributes:
+      - name: name
+        kind: Text
+        optional: false
+        order_weight: 1000
+      - name: description
+        kind: Text
+        optional: true
+        order_weight: 1100
+      - name: schema_kind
+        kind: Text
+        optional: false
+        order_weight: 1200
+      - name: filters
+        kind: JSON
+        optional: true
+        order_weight: 2000
+      - name: sort
+        kind: JSON
+        optional: true
+        order_weight: 2100
+      - name: visible_columns
+        kind: JSON
+        optional: true
+        order_weight: 2200
+    relationships:
+      - name: owner
+        peer: CoreGenericAccount
+        identifier: account__saved_views
+        kind: Parent
+        cardinality: one
+        optional: false
+        on_delete: cascade
+        order_weight: 100
+```
+
 ### Interaction with `CoreUserPreference`
 
 Add two attributes to `CoreUserPreference` in V2:
 
 - `selected_saved_views` (JSON): map `schema_kind → saved_view_id`. Records which view the user currently has active per kind, so reopening the page restores it.
 - `schema_graph_state` (JSON): fold/zoom/positions and any other per-user schema graph visualization state, migrated off `localStorage`.
+
+YAML diff (additive — the V1 block above gains these two attributes):
+
+```yaml
+# additions to CoreUserPreference.attributes in V2
+- name: selected_saved_views
+  kind: JSON
+  optional: true
+  order_weight: 1400
+  description: Map schema_kind -> saved_view_id currently active.
+- name: schema_graph_state
+  kind: JSON
+  optional: true
+  order_weight: 1500
+  description: Fold/zoom/positions of the schema graph visualization.
+```
 
 Resolution order when rendering a list page (V2):
 
@@ -198,6 +320,29 @@ Extend `CoreSavedView` with two sharing relationships; no rework of V2 required.
 | `shared_with_accounts` | Relationship → `CoreGenericAccount`, `cardinality=MANY` | Direct share with specific users, no group required |
 
 No `visibility` enum: a view is private iff both share relationships are empty. Single source of truth, and "unshare" is just removing the peer. Sharing remains opt-in per view — there is no bulk folder-level share concept.
+
+YAML diff (additive — appended to `CoreSavedView.relationships` from V2):
+
+```yaml
+# additions to CoreSavedView.relationships in V3
+- name: shared_with_groups
+  peer: CoreAccountGroup
+  identifier: saved_view__shared_groups
+  kind: Attribute
+  cardinality: many
+  optional: true
+  order_weight: 3000
+  description: Members of these groups get read access.
+- name: shared_with_accounts
+  peer: CoreGenericAccount
+  identifier: saved_view__shared_accounts
+  kind: Attribute
+  cardinality: many
+  optional: true
+  order_weight: 3100
+  description: Direct share with specific users.
+```
+
 
 Permission model:
 
