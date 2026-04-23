@@ -62,7 +62,8 @@ Initial attributes:
 
 | Attribute | Kind | Constraint | Purpose |
 |---|---|---|---|
-| `date_format` | Text | enum: `iso`, `us`, `eu`, `relative` | Display format for dates/datetimes. Final enum list to confirm against existing formatters |
+| `date_format` | Text | — | Free-form display format for dates/datetimes, stored as a date-fns pattern string (e.g. `dd/MM/yyyy`, `yyyy-MM-dd HH:mm`). The settings UI offers common patterns as presets (`yyyy-MM-dd`, `dd/MM/yyyy`, `MM/dd/yyyy`, `dd.MM.yyyy`, `PP`, `relative`) but the stored value is always the raw pattern. The literal string `relative` is a sentinel handled by the formatter (renders "2 hours ago"–style output) and is the only non-date-fns value accepted |
+| `timezone` | Text | — | IANA timezone name (e.g. `Europe/Paris`, `UTC`). Unset means "use the browser's resolved timezone". Not an enum — the IANA set is ~400 entries and grows; the frontend validates input against `Intl.supportedValuesOf('timeZone')` before submit |
 | `branch_delete_mode` | Text | enum: `local`, `local_and_git` | Default selection when opening the branch-delete dialog |
 | `show_extra_fields` | Boolean | — | Default for the "show extra attributes/relationships" toggle on object and list views. Final attribute name to align with whatever the UI calls the toggle today |
 | `last_used_filters` | JSON | — | Map keyed by schema kind → last-applied filter params. Structure is frontend-owned; backend stores and returns it verbatim |
@@ -89,10 +90,21 @@ nodes:
     attributes:
       - name: date_format
         kind: Text
-        enum: [iso, us, eu, relative]
         optional: true
         order_weight: 1000
-        description: Display format for dates and datetimes.
+        description: >-
+          Free-form date-fns pattern string (e.g. "dd/MM/yyyy",
+          "yyyy-MM-dd HH:mm"). The literal "relative" is a sentinel for
+          relative-time rendering ("2 hours ago"); all other values are
+          passed to date-fns format() verbatim.
+      - name: timezone
+        kind: Text
+        optional: true
+        order_weight: 1050
+        description: >-
+          IANA timezone name (e.g. Europe/Paris, UTC). Unset means
+          "use the browser's resolved timezone". Not an enum — the frontend
+          validates input against Intl.supportedValuesOf('timeZone').
       - name: branch_delete_mode
         kind: Text
         enum: [local, local_and_git]
@@ -129,6 +141,7 @@ query InfrahubMyPreferences {
   InfrahubMyPreferences {
     id
     date_format { value }
+    timezone { value }
     branch_delete_mode { value }
     show_extra_fields { value }
     last_used_filters { value }
@@ -141,6 +154,7 @@ mutation InfrahubMyPreferencesUpsert($data: CoreUserPreferenceUpsertInput!) {
     object {
       id
       date_format { value }
+      timezone { value }
       branch_delete_mode { value }
       show_extra_fields { value }
       last_used_filters { value }
@@ -178,10 +192,12 @@ Standard auto-generated `CoreUserPreferenceCreate/Update/Delete` mutations remai
 
 | Caller | Reads | Writes |
 |---|---|---|
-| Date formatter helper (`frontend/app/src/shared/hooks/useDateFormat.ts`, new) | `date_format` | — |
+| Date formatter helper (`frontend/app/src/shared/hooks/useDateFormat.ts`, new) | `date_format`, `timezone` | — |
 | Branch delete button (`frontend/app/src/entities/branches/ui/branch-delete-button.tsx`) | `branch_delete_mode` as default of the mode selector | writes on "remember my choice" |
 | Object/list view "show extra fields" toggle | `show_extra_fields` | writes on toggle |
 | Object list page filter bar | `last_used_filters[schema_kind]` | writes on filter change (debounced) |
+
+The date formatter helper passes `date_format` straight to date-fns `format()` (short-circuiting to `formatDistanceToNow` when the value is `relative`), and applies `timezone` via `date-fns-tz` (new dependency, ~15 kB gz). All existing `format(date, …)` call sites route through this helper so preferences apply uniformly. When `timezone` is unset, the helper uses `Intl.DateTimeFormat().resolvedOptions().timeZone`. Invalid patterns are caught client-side at write time (settings form validates by attempting a dry-run `format(new Date(), pattern)`); the backend does not validate date-fns syntax.
 
 #### Not migrated in V1
 
@@ -360,7 +376,8 @@ Frontend additions (V3): a "Share…" dialog on views the user owns (targets gro
 
 ## Open Questions
 
-- **Date format enum values.** Final list depends on what the existing frontend formatters already handle. To be resolved during implementation by auditing `frontend/app/src/entities/navigation/ui/time-selector.tsx` and any date-rendering helpers.
+- **Date format storage.** Resolved: store the raw date-fns pattern as free-form text (no enum). The settings UI exposes a handful of presets for discoverability, but the stored value is always the pattern itself so users can enter any combination (`dd/MM/yyyy HH:mm`, `yyyy-MM-dd`, etc.) without a schema change. The literal `relative` is reserved as a sentinel for relative-time rendering. Tradeoff accepted: stored values are coupled to date-fns token syntax; swapping formatter libraries later would require a data migration. Validation lives on the client (attempt a dry-run format); the backend stores what it receives.
+- **Timezone override.** Resolved: add a separate `timezone` Text attribute (IANA name, optional, unset = browser local). Conflating it with `date_format` would mix appearance with semantic value. Adopting zone-aware formatting requires `date-fns-tz` as a new frontend dependency (~15 kB gz) since plain `date-fns` does not convert zones — flag during implementation.
 - **Extra-fields toggle name.** The attribute should match the UI's wording. To be resolved during implementation by locating the current toggle in object and list views.
 - **Debounce window for `last_used_filters` writes.** Suggested starting point: 1 s after the last filter change, with a flush on page navigation.
 - **V2 only — ad-hoc edits on top of a saved view.** Behavior when the user changes a filter while a saved view is active: drop the view selection and fall back to `last_used_filters`, or require an explicit "fork / save as" step. Deferred to V2 design.
