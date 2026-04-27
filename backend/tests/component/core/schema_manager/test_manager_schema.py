@@ -41,6 +41,7 @@ from infrahub.core.schema.definitions.core.template import core_object_component
 from infrahub.core.schema.manager import SchemaManager
 from infrahub.core.schema.schema_branch import SchemaBranch
 from infrahub.core.timestamp import Timestamp
+from infrahub.core.validators.schema_branch.display_label_validator import DisplayLabelValidator
 from infrahub.database import InfrahubDatabase
 from infrahub.exceptions import SchemaNotFoundError, ValidationError
 from tests.conftest import TestHelper
@@ -178,8 +179,8 @@ async def test_schema_branch_process_inheritance_node_level(animal_person_schema
     assert dog.human_friendly_id == animal.human_friendly_id
     assert cat.human_friendly_id != animal.human_friendly_id
 
-    assert dog.display_labels == animal.display_labels
-    assert cat.display_labels != animal.display_labels
+    assert dog.display_label == animal.display_label
+    assert cat.display_label != animal.display_label
 
     assert dog.order_by == animal.order_by
     assert cat.order_by != animal.order_by
@@ -723,7 +724,7 @@ def test_schema_branch_processes_node_template_schema_weight(register_core_model
                 "icon": "mdi:server",
                 "human_friendly_id": ["name__value"],
                 "order_by": ["name__value"],
-                "display_labels": ["name__value"],
+                "display_label": "name__value",
                 "generate_template": True,
                 "attributes": [
                     {"name": "name", "kind": "Text", "unique": True, "order_weight": 7000},
@@ -1778,7 +1779,7 @@ async def test_validate_exception_ipam_ip_namespace(
                 "namespace": "Ipam",
                 "default_filter": "prefix__value",
                 "order_by": ["prefix__value"],
-                "display_labels": ["prefix__value"],
+                "display_label": "prefix__value",
                 "human_friendly_id": ["ip_namespace__name__value", "prefix__value"],
                 "branch": BranchSupportType.AWARE.value,
                 "inherit_from": [InfrahubKind.IPPREFIX],
@@ -1788,7 +1789,7 @@ async def test_validate_exception_ipam_ip_namespace(
                 "namespace": "Ipam",
                 "default_filter": "address__value",
                 "order_by": ["address__value"],
-                "display_labels": ["address__value"],
+                "display_label": "address__value",
                 "uniqueness_constraints": [["ip_namespace", "address__value"]],
                 "branch": BranchSupportType.AWARE.value,
                 "inherit_from": [InfrahubKind.IPADDRESS],
@@ -1870,7 +1871,7 @@ async def test_validate_display_labels_success(schema_all_in_one: dict[str, Any]
     schema = SchemaBranch(cache={}, name="test")
     schema.load_schema(schema=SchemaRoot(**schema_all_in_one))
 
-    schema.validate_display_labels()
+    DisplayLabelValidator().check(schema)
 
 
 @pytest.mark.parametrize(
@@ -1883,7 +1884,21 @@ async def test_validate_display_label_success(schema_all_in_one: dict[str, Any],
     schema = SchemaBranch(cache={}, name="test")
     schema.load_schema(schema=SchemaRoot(**schema_all_in_one))
 
-    schema.validate_display_label()
+    DisplayLabelValidator().check(schema)
+
+
+async def test_validate_display_label_inherited_from_generic(schema_all_in_one: dict[str, Any]) -> None:
+    """Node schemas with no display_label should inherit display_label from a parent generic."""
+    schema_dict = _get_schema_by_kind(schema_all_in_one, "InfraGenericInterface")
+    schema_dict["display_label"] = "my_generic_name__value"
+
+    schema = SchemaBranch(cache={}, name="test")
+    schema.load_schema(schema=SchemaRoot(**schema_all_in_one))
+
+    DisplayLabelValidator().check(schema)
+
+    node = schema.get(name="TestingCriticality", duplicate=False)
+    assert node.display_label == "my_generic_name__value"
 
 
 @pytest.mark.parametrize(
@@ -1920,7 +1935,7 @@ async def test_validate_display_labels_error(
     schema.load_schema(schema=SchemaRoot(**schema_all_in_one))
 
     with pytest.raises(ValueError, match=expected_error):
-        schema.validate_display_labels()
+        DisplayLabelValidator().check(schema)
 
 
 @pytest.mark.parametrize(
@@ -1964,7 +1979,7 @@ async def test_validate_display_label_error(
     schema.load_schema(schema=SchemaRoot(**schema_all_in_one))
 
     with pytest.raises(ValueError, match=expected_error):
-        schema.validate_display_label()
+        DisplayLabelValidator().check(schema)
 
 
 @pytest.mark.parametrize(
@@ -3843,7 +3858,7 @@ INHERITED_RELATIONSHIPS_TEST_CASES = [
                         "description": "Generic Network Interface",
                         "label": "Interface",
                         "include_in_menu": False,
-                        "display_labels": ["name__value"],
+                        "display_label": "name__value",
                         "order_by": ["device__name__value", "name__value"],
                         "uniqueness_constraints": [["device", "name__value"]],
                         "human_friendly_id": ["device__name__value", "name__value"],
@@ -3995,7 +4010,7 @@ INHERITED_RELATIONSHIPS_TEST_CASES = [
                     "description": "Generic Network Interface",
                     "label": "Interface",
                     "include_in_menu": False,
-                    "display_labels": ["name__value"],
+                    "display_label": "name__value",
                     "order_by": ["device__name__value", "name__value"],
                     "uniqueness_constraints": [["device", "name__value"]],
                     "human_friendly_id": ["device__name__value", "name__value"],
@@ -4194,7 +4209,7 @@ async def test_schema_branch_processes_nodes_state(
                 "namespace": "Test",
                 "label": "Widget",
                 "state": "absent",
-                "display_labels": ["name__value"],
+                "display_label": "name__value",
                 "attributes": [
                     {"name": "name", "kind": "Text", "unique": True},
                     {"name": "description", "kind": "Text"},
@@ -4235,7 +4250,7 @@ async def test_schema_branch_processes_attributes_state(
                 "name": "Widget",
                 "namespace": "Test",
                 "label": "Widget",
-                "display_labels": ["name__value"],
+                "display_label": "name__value",
                 "attributes": [
                     {"name": "name", "kind": "Text", "unique": True},
                     {"name": "description", "kind": "Text", "state": "absent"},
@@ -4267,7 +4282,7 @@ async def test_schema_branch_processes_attributes_state(
                 "name": "Widget",
                 "namespace": "Test",
                 "label": "Widget",
-                "display_labels": ["name__value"],
+                "display_label": "name__value",
                 "attributes": [
                     {"name": "name", "kind": "Text", "unique": True},
                     {"name": "description", "kind": "Text"},
@@ -4636,3 +4651,51 @@ async def test_manage_object_templates_component_relationship_to_excluded_kind()
     template = schema_branch.get(name=f"Template{TestKind.CAR}", duplicate=False)
     pool_rel = template.get_relationship(name="number_pools")
     assert pool_rel.peer == InfrahubKind.NUMBERPOOL
+
+
+async def test_profile_does_not_contain_optional_unique_attributes() -> None:
+    schema = {
+        "namespace": "Network",
+        "name": "Router",
+        "uniqueness_constraints": [["name__value", "age__value"], ["year__value"]],
+        "human_friendly_id": ["name__value"],
+        "display_label": "name__value",
+        "attributes": [
+            {"name": "name", "kind": "Text", "optional": True},
+            {"name": "age", "kind": "Number", "optional": True},
+            {"name": "year", "kind": "Number", "optional": True},
+        ],
+    }
+    schema_branch = SchemaBranch(cache={}, name="test")
+    schema_branch.load_schema(schema=SchemaRoot(nodes=[schema]))
+    schema_branch.process()
+
+    network_router_profile = schema_branch.get(name="ProfileNetworkRouter", duplicate=False)
+    with pytest.raises(ValueError, match="Unable to find the attribute name"):
+        network_router_profile.get_attribute("name")
+
+    with pytest.raises(ValueError, match="Unable to find the attribute age"):
+        network_router_profile.get_attribute("age")
+
+    with pytest.raises(ValueError, match="Unable to find the attribute year"):
+        network_router_profile.get_attribute("year")
+
+    schema_2 = copy.deepcopy(schema)
+    schema_2["attributes"][0]["unique"] = True
+    schema_2["attributes"][1]["unique"] = True
+    schema_2["attributes"][2]["unique"] = True
+    schema_2["uniqueness_constraints"] = []
+
+    schema_branch_2 = SchemaBranch(cache={}, name="test2")
+    schema_branch_2.load_schema(schema=SchemaRoot(nodes=[schema_2]))
+    schema_branch_2.process()
+
+    network_router_profile_2 = schema_branch_2.get(name="ProfileNetworkRouter", duplicate=False)
+    with pytest.raises(ValueError, match="Unable to find the attribute name"):
+        network_router_profile_2.get_attribute("name")
+
+    with pytest.raises(ValueError, match="Unable to find the attribute age"):
+        network_router_profile_2.get_attribute("age")
+
+    with pytest.raises(ValueError, match="Unable to find the attribute year"):
+        network_router_profile_2.get_attribute("year")

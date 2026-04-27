@@ -1,3 +1,4 @@
+import { Card, CardHeader } from "@infrahub/ui/card";
 import { Outlet, useParams } from "react-router";
 
 import { queryClient } from "@/shared/api/rest/client";
@@ -9,24 +10,21 @@ import Content from "@/shared/components/layout/content";
 import { LoadingIndicator } from "@/shared/components/loading/loading-indicator";
 import { type Property, PropertyList } from "@/shared/components/table/property-list";
 import { Badge } from "@/shared/components/ui/badge";
-import { Card, CardWithBorder } from "@/shared/components/ui/card";
 import { Link } from "@/shared/components/ui/link";
 
 import { IP_SUMMARY_RELATIONSHIPS_BLACKLIST } from "@/entities/ipam/constants";
-import {
-  type AttributeType,
-  ObjectAttributeValue,
-} from "@/entities/nodes/getObjectItemDisplayValue";
-import { useGetObject } from "@/entities/nodes/object/domain/get-object.query";
+import { ObjectAttributeValue } from "@/entities/nodes/getObjectItemDisplayValue";
 import { NodeMetadataPopover } from "@/entities/nodes/object/ui/object-details/node-metadata-popover";
 import { ObjectHelpButton } from "@/entities/nodes/object/ui/object-help-button";
+import { useGetObject } from "@/entities/nodes/object/ui/queries/get-object.query";
 import { getNodeLabel } from "@/entities/nodes/object/utils/get-node-label";
+import type { NodeAttributeWithMetadata } from "@/entities/nodes/types";
 import { getObjectDetailsUrl } from "@/entities/nodes/utils";
 import type { Permission } from "@/entities/permission/types";
 import { RequireObjectPermissions } from "@/entities/permission/ui/require-object-permissions";
 import { RESOURCE_GENERIC_KIND } from "@/entities/resource-manager/constants";
-import { useGetPoolUtilization } from "@/entities/resource-manager/domain/get-pool-utilization.query";
-import { resourceManagerQueryKeys } from "@/entities/resource-manager/domain/resource-manager.query-keys";
+import { useGetPoolUtilization } from "@/entities/resource-manager/ui/queries/get-pool-utilization.query";
+import { resourceManagerQueryKeys } from "@/entities/resource-manager/ui/queries/resource-manager.query-keys";
 import ResourcePoolUtilization from "@/entities/resource-manager/ui/ResourcePoolUtilization";
 import ResourceSelector from "@/entities/resource-manager/ui/resource-selector";
 import type { ModelSchema } from "@/entities/schema/types";
@@ -139,7 +137,7 @@ const ResourcePoolContent = ({ resourcePoolId, schema, permission }: ResourcePoo
         value: (
           <ObjectAttributeValue
             attributeSchema={schemaAttribute}
-            attributeData={resourcePool[schemaAttribute.name] as AttributeType}
+            attributeData={resourcePool[schemaAttribute.name] as NodeAttributeWithMetadata}
           />
         ),
       };
@@ -193,18 +191,16 @@ const ResourcePoolContent = ({ resourcePoolId, schema, permission }: ResourcePoo
       <div className="flex items-start overflow-hidden p-2">
         <aside className="mr-1 inline-flex shrink-0 flex-col gap-2">
           <Card className="shrink-0">
-            <CardWithBorder.Title className="flex items-center justify-between gap-1">
-              <div>
-                <Badge variant="blue">{schema.namespace}</Badge> {schema.label}
-              </div>
-
+            <CardHeader className="flex items-center justify-between gap-1">
+              <Badge variant="blue">{schema.namespace}</Badge>
+              <span>{schema.label}</span>
               <ObjectEditSlideOverTrigger
                 data={resourcePool}
                 schema={schema}
                 onUpdateComplete={handleRefetchAll}
                 permission={permission}
               />
-            </CardWithBorder.Title>
+            </CardHeader>
 
             <PropertyList properties={properties} labelClassName="font-semibold" />
           </Card>

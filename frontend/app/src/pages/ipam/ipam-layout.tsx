@@ -17,8 +17,8 @@ import {
 import { classNames } from "@/shared/utils/common";
 
 import { IPAM_TREE_KEY } from "@/entities/ipam/constants";
-import IpNamespaceSelector from "@/entities/ipam/ip-namespaces/ip-namespace-selector";
 import { IpNamespaceProvider } from "@/entities/ipam/ip-namespaces/ui/ip-namespace-provider";
+import IpNamespaceSelector from "@/entities/ipam/ip-namespaces/ui/ip-namespace-selector";
 import { IpamTreeWithSearch } from "@/entities/ipam/ipam-tree/ui/ipam-tree-with-search";
 
 const ipamTreeCollapsedAtom = atomWithStorage(IPAM_TREE_KEY, false);
@@ -38,7 +38,7 @@ export const Component = () => {
               maxSize="90%"
               className="flex grow flex-col"
             >
-              <Content.Card className="flex grow flex-col">
+              <Content.Card className="grow">
                 <IpamToolbar />
 
                 <ErrorBoundary
@@ -54,7 +54,7 @@ export const Component = () => {
         )}
 
         <ResizablePanel id="main-panel" className="flex grow flex-col">
-          <Content.Card className="flex grow flex-col">
+          <Content.Card className="grow">
             {ipamTreeCollapsed && <IpamToolbar className="max-w-74.5" />}
             <Outlet />
           </Content.Card>

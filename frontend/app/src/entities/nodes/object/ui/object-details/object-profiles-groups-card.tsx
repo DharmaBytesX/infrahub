@@ -1,4 +1,5 @@
 import { Icon } from "@iconify-icon/react";
+import { Card, CardHeader } from "@infrahub/ui/card";
 import { ChevronDownIcon, ChevronUpIcon, PenLineIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link } from "react-router";
@@ -9,15 +10,14 @@ import MetaDetailsTooltip from "@/shared/components/display/meta-details-tooltip
 import SlideOver, { SlideOverTitle } from "@/shared/components/display/slide-over";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
-import { Card, CardWithBorder } from "@/shared/components/ui/card";
 import { focusVisibleStyle } from "@/shared/components/ui/style";
 import { classNames } from "@/shared/utils/common";
 
 import { GroupsManager } from "@/entities/groups/ui/groups-manager";
-import { objectQueryKeys } from "@/entities/nodes/object/domain/object.query-keys";
+import { objectQueryKeys } from "@/entities/nodes/object/ui/queries/object.query-keys";
 import { getNodeLabel } from "@/entities/nodes/object/utils/get-node-label";
 import ObjectItemEditComponent from "@/entities/nodes/object-item-edit/object-item-edit-paginated";
-import { useGetProfiles } from "@/entities/nodes/profiles/domain/get-profiles.query";
+import { useGetProfiles } from "@/entities/nodes/profiles/ui/queries/get-profiles.query";
 import type {
   NodeCore,
   NodeObjectWithMetadata,
@@ -272,7 +272,6 @@ function GroupsList({ objectData, objectSchema, permission }: GroupsListProps) {
         <GroupsManager
           schema={objectSchema}
           objectId={objectData.id}
-          onUpdateCompleted={() => queryClient.invalidateQueries({ queryKey: objectQueryKeys.all })}
           className="overflow-auto p-4"
         />
       </SlideOver>
@@ -324,8 +323,8 @@ export function ObjectProfilesGroupsCard({
   };
 
   return (
-    <Card className={classNames("divide-y divide-gray-200 overflow-x-hidden p-0", className)}>
-      <CardWithBorder.Title>{getCardTitle()}</CardWithBorder.Title>
+    <Card className={classNames("divide-y divide-gray-200", className)}>
+      <CardHeader>{getCardTitle()}</CardHeader>
 
       {showProfilesSection && (
         <Section>

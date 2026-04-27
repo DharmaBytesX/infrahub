@@ -1,17 +1,18 @@
+import { Card, CardHeader } from "@infrahub/ui/card";
+
 import { Separator } from "@/shared/components/aria/separator";
 import { Col, Row } from "@/shared/components/container";
 import { getExtensionFromContentType } from "@/shared/components/data-viewer/types";
 import ErrorScreen from "@/shared/components/errors/error-screen";
 import Content from "@/shared/components/layout/content";
 import { LoadingIndicator } from "@/shared/components/loading/loading-indicator";
-import { Card } from "@/shared/components/ui/card";
 
 import { assertArtifactObject } from "@/entities/artifacts/types";
 import { ArtifactFile } from "@/entities/artifacts/ui/artifact-file";
 import { ArtifactHeader } from "@/entities/artifacts/ui/artifact-header";
 import { NodeEvents } from "@/entities/events/ui/node-details-events";
-import { useGetObject } from "@/entities/nodes/object/domain/get-object.query";
 import { NodeDescription } from "@/entities/nodes/object/ui/node-description";
+import { useGetObject } from "@/entities/nodes/object/ui/queries/get-object.query";
 import type { ModelSchema } from "@/entities/schema/types";
 
 export interface ArtifactsDetailsProps {
@@ -45,7 +46,7 @@ export function ArtifactsDetails({ artifactId, artifactSchema }: ArtifactsDetail
 
   return (
     <div className="flex w-full grow flex-wrap gap-0.5 overflow-auto lg:flex-nowrap">
-      <Content.Card className="flex grow flex-col">
+      <Content.Card className="grow">
         <Col className="gap-3 p-4 pb-2">
           <ArtifactHeader artifact={artifact} />
 
@@ -71,8 +72,8 @@ export function ArtifactsDetails({ artifactId, artifactSchema }: ArtifactsDetail
           </div>
         )}
       </Content.Card>
-      <Card className="min-w-90 overflow-auto p-0">
-        <div className="border-gray-200 border-b p-2 font-semibold">Activities</div>
+      <Card className="min-w-90 overflow-auto">
+        <CardHeader>Activities</CardHeader>
         <NodeEvents objectId={artifactId} objectKind={artifactKind} />
       </Card>
     </div>
