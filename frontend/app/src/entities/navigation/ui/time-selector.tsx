@@ -41,7 +41,13 @@ export const TimeFrameSelector = () => {
     >
       <DateTimePicker
         customInput={
-          <Button size="sm" shape="square" variant="ghost" data-testid="timeframe-selector">
+          <Button
+            size="sm"
+            shape="square"
+            variant="ghost"
+            data-testid="timeframe-selector"
+            className={classNames(date && "text-white data-hovered:bg-neutral-700")}
+          >
             <Icon icon="mdi:calendar-clock" className="text-xl" />
           </Button>
         }
@@ -78,8 +84,9 @@ export const TimeFrameSelector = () => {
         <Button
           shape="square"
           variant="ghost"
+          size="sm"
           onPress={reset}
-          className="h-8 w-8 data-hovered:bg-neutral-700"
+          className={classNames("data-hovered:bg-neutral-700", date && "text-white")}
           data-testid="reset-timeframe-selector"
         >
           <Icon icon="mdi:close" />

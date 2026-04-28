@@ -6,8 +6,9 @@ import { useState } from "react";
 import { toast } from "react-toastify";
 
 import { queryClient } from "@/shared/api/rest/client";
+import { Sheet } from "@/shared/components/aria/sheet";
 import { Tooltip } from "@/shared/components/aria/tooltip";
-import SlideOver, { SlideOverTitle } from "@/shared/components/display/slide-over";
+import { SlideOverTitle } from "@/shared/components/display/slide-over";
 import DynamicForm from "@/shared/components/form/dynamic-form";
 import ObjectForm from "@/shared/components/form/object-form";
 import { FormContext } from "@/shared/components/form/utils/form-context";
@@ -129,20 +130,15 @@ export function RelationshipsButtons({
         </Button>
       </Tooltip>
 
-      <SlideOver
-        title={
-          parentSchema && (
-            <SlideOverTitle
-              schema={parentSchema}
-              currentObjectLabel={relationshipSchema?.label}
-              title={`Associate a new ${relationshipSchema?.label}`}
-              subtitle={`Add a new ${relationshipSchema?.label} to the current object`}
-            />
-          )
-        }
-        open={showAddDrawer}
-        setOpen={setShowAddDrawer}
-      >
+      <Sheet isOpen={showAddDrawer} onOpenChange={setShowAddDrawer}>
+        {parentSchema && (
+          <SlideOverTitle
+            schema={parentSchema}
+            currentObjectLabel={relationshipSchema?.label}
+            title={`Associate a new ${relationshipSchema?.label}`}
+            subtitle={`Add a new ${relationshipSchema?.label} to the current object`}
+          />
+        )}
         <FormContext value={{ parentSchema, parentData: objectDetailsData }}>
           {parentSchema &&
           relationshipSchemaData?.kind === "Component" &&
@@ -190,7 +186,7 @@ export function RelationshipsButtons({
             />
           )}
         </FormContext>
-      </SlideOver>
+      </Sheet>
     </>
   );
 }

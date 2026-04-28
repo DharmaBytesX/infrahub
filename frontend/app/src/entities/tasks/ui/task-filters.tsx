@@ -2,8 +2,8 @@ import { Icon } from "@iconify-icon/react";
 import { Button } from "@infrahub/ui";
 import { useState } from "react";
 
+import { Sheet } from "@/shared/components/aria/sheet";
 import { Tooltip } from "@/shared/components/aria/tooltip";
-import SlideOver from "@/shared/components/display/slide-over";
 import { getFiltersFromFormData } from "@/shared/components/filters/utils/getFiltersFromFormData";
 import type { FormFieldValue } from "@/shared/components/form/type";
 import { SEARCH_FILTERS } from "@/shared/config/constants";
@@ -73,13 +73,14 @@ export const TaskFilters = () => {
         )}
       </div>
 
-      <SlideOver title={"Apply filters"} open={showFilters} setOpen={setShowFilters}>
+      <Sheet isOpen={showFilters} onOpenChange={setShowFilters} aria-label="Apply filters">
+        <h3 className="font-semibold text-lg">Apply filters</h3>
         <TasksFilterForm
           filters={filters}
           onSubmit={handleSubmit}
           onCancel={() => setShowFilters(false)}
         />
-      </SlideOver>
+      </Sheet>
     </>
   );
 };

@@ -10,15 +10,17 @@ import {
   useFormContext,
 } from "react-hook-form";
 
-import { SlideOverContext } from "@/shared/components/display/slide-over";
+import { ModalConfirm } from "@/shared/components/modals/modal-confirm";
 import Label, { type LabelProps } from "@/shared/components/ui/label";
 import { inputErrorStyle } from "@/shared/components/ui/style";
+import { DismissGuardContext } from "@/shared/hooks/useDismissGuard";
 import { classNames } from "@/shared/utils/common";
 
 export type FormRef = ReturnType<typeof useForm>;
 
 export interface FormProps extends Omit<React.FormHTMLAttributes<HTMLFormElement>, "onSubmit"> {
   onSubmit?: (v: Record<string, any>) => void;
+  onCancel?: () => void;
   defaultValues?: Partial<Record<string, unknown>>;
   form?: UseFormReturn;
   ref?: React.Ref<FormRef>;
@@ -30,12 +32,14 @@ export const Form = ({
   className,
   children,
   onSubmit,
+  onCancel,
   ref,
   ...props
 }: FormProps) => {
   const currentForm = form ?? useForm({ defaultValues });
 
-  const slideOverContext = React.use(SlideOverContext);
+  const dismissGuard = React.use(DismissGuardContext);
+  const [showConfirm, setShowConfirm] = React.useState(false);
 
   React.useImperativeHandle(ref, () => currentForm);
 
@@ -43,12 +47,10 @@ export const Form = ({
     if (!form) currentForm.reset(defaultValues);
   }, [JSON.stringify(defaultValues)]);
 
+  const isDirty = currentForm.formState.isDirty;
   React.useEffect(() => {
-    // Stop logic if there is no context to prevent the slide over close
-    if (!slideOverContext?.setPreventClose) return;
-
-    slideOverContext.setPreventClose(currentForm.formState.isDirty);
-  }, [currentForm.formState.isDirty]);
+    dismissGuard?.setDismissable(!isDirty, () => setShowConfirm(true));
+  }, [isDirty]);
 
   return (
     <FormProvider {...currentForm}>
@@ -70,6 +72,18 @@ export const Form = ({
       >
         {children}
       </form>
+
+      <ModalConfirm
+        isOpen={showConfirm}
+        onOpenChange={setShowConfirm}
+        title="Closing form"
+        description="Are you sure you want to close this form? All unsaved changes will be lost."
+        onConfirm={() => {
+          setShowConfirm(false);
+          dismissGuard?.setDismissable(true);
+          onCancel?.();
+        }}
+      />
     </FormProvider>
   );
 };

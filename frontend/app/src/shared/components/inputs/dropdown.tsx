@@ -3,7 +3,8 @@ import { Button } from "@infrahub/ui";
 import React from "react";
 
 import { useMutation } from "@/shared/api/graphql/useQuery";
-import SlideOver, { SlideOverTitle } from "@/shared/components/display/slide-over";
+import { Sheet } from "@/shared/components/aria/sheet";
+import { SlideOverTitle } from "@/shared/components/display/slide-over";
 import DynamicForm from "@/shared/components/form/dynamic-form";
 import { isRequired } from "@/shared/components/form/utils/validation";
 import { ModalDelete } from "@/shared/components/modals/modal-delete";
@@ -162,19 +163,13 @@ export const DropdownAddAction = ({ schema, field, addOption }: DropdownAddActio
         </Button>
       )}
 
-      <SlideOver
-        title={
-          <SlideOverTitle
-            schema={schema}
-            currentObjectLabel={field?.label ?? ""}
-            title="Add a new option"
-            subtitle={field?.description}
-          />
-        }
-        open={open}
-        setOpen={setOpen}
-        offset={1}
-      >
+      <Sheet isOpen={open} onOpenChange={setOpen}>
+        <SlideOverTitle
+          schema={schema}
+          currentObjectLabel={field?.label ?? ""}
+          title="Add a new option"
+          subtitle={field?.description}
+        />
         <DynamicForm
           fields={[
             {
@@ -218,7 +213,7 @@ export const DropdownAddAction = ({ schema, field, addOption }: DropdownAddActio
           onCancel={() => setOpen(false)}
           className="p-4"
         />
-      </SlideOver>
+      </Sheet>
     </div>
   );
 };

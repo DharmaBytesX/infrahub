@@ -19,7 +19,8 @@ import {
   MenuTrigger,
 } from "@/shared/components/aria/menu";
 import { Popover } from "@/shared/components/aria/popover";
-import SlideOver, { SlideOverTitle } from "@/shared/components/display/slide-over";
+import { Sheet } from "@/shared/components/aria/sheet";
+import { SlideOverTitle } from "@/shared/components/display/slide-over";
 import { INFRAHUB_DOC_LOCAL } from "@/shared/config/config";
 import { GENERIC_REPOSITORY_KIND } from "@/shared/config/constants";
 import { QSP } from "@/shared/config/qsp";
@@ -194,37 +195,27 @@ export function ObjectDetailsMenu({
         </Popover>
       </MenuTrigger>
 
-      <SlideOver
-        open={isManageGroupsDrawerOpen}
-        setOpen={setIsManageGroupsDrawerOpen}
-        title={
-          <SlideOverTitle
-            schema={objectSchema}
-            currentObjectLabel={nodeLabel}
-            title="Manage groups"
-            subtitle="Add and unassign groups"
-          />
-        }
-      >
+      <Sheet isOpen={isManageGroupsDrawerOpen} onOpenChange={setIsManageGroupsDrawerOpen}>
+        <SlideOverTitle
+          schema={objectSchema}
+          currentObjectLabel={nodeLabel}
+          title="Manage groups"
+          subtitle="Add and unassign groups"
+        />
         <GroupsManager
           schema={objectSchema}
           objectId={objectData.id}
           className="overflow-auto p-4"
         />
-      </SlideOver>
+      </Sheet>
 
-      <SlideOver
-        title={
-          <SlideOverTitle
-            schema={objectSchema}
-            currentObjectLabel={nodeLabel}
-            title={`Edit ${nodeLabel}`}
-            subtitle={objectSchema.description}
-          />
-        }
-        open={isEditModalOpen}
-        setOpen={setIsEditModalOpen}
-      >
+      <Sheet isOpen={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <SlideOverTitle
+          schema={objectSchema}
+          currentObjectLabel={nodeLabel}
+          title={`Edit ${nodeLabel}`}
+          subtitle={objectSchema.description}
+        />
         <ObjectItemEditComponent
           closeDrawer={() => setIsEditModalOpen(false)}
           onUpdateComplete={async () => {
@@ -234,7 +225,7 @@ export function ObjectDetailsMenu({
           objectId={objectData.id!}
           objectname={objectSchema.kind!}
         />
-      </SlideOver>
+      </Sheet>
 
       <ModalDeleteObject
         label={objectSchema.label}

@@ -1,8 +1,8 @@
 import React from "react";
 
 interface StackContextValue {
-  onChildOpen: () => void;
-  onChildClose: () => void;
+  onChildOpen: (stackGroup: string) => void;
+  onChildClose: (stackGroup: string) => void;
 }
 
 const StackContext = React.createContext<StackContextValue>({
@@ -11,27 +11,28 @@ const StackContext = React.createContext<StackContextValue>({
 });
 
 interface StackedProps {
+  group: string;
   isStacked?: boolean;
-  children: (stackOffset: number) => React.ReactNode;
+  children: (depth: number) => React.ReactNode;
 }
 
-export function Stacked({ isStacked, children }: StackedProps) {
+export function Stacked({ group, isStacked, children }: StackedProps) {
   const parent = React.use(StackContext);
   const [layersAbove, setLayersAbove] = React.useState(0);
 
   React.useLayoutEffect(() => {
     if (!isStacked) return;
-    parent.onChildOpen();
-    return () => parent.onChildClose();
-  }, [isStacked]);
+    parent.onChildOpen(group);
+    return () => parent.onChildClose(group);
+  }, [isStacked, group]);
 
-  const onChildOpen = () => {
-    setLayersAbove((c) => c + 1);
-    parent.onChildOpen();
+  const onChildOpen = (childGroup: string) => {
+    if (childGroup === group) setLayersAbove((c) => c + 1);
+    parent.onChildOpen(childGroup);
   };
-  const onChildClose = () => {
-    setLayersAbove((c) => c - 1);
-    parent.onChildClose();
+  const onChildClose = (childGroup: string) => {
+    if (childGroup === group) setLayersAbove((c) => c - 1);
+    parent.onChildClose(childGroup);
   };
 
   return <StackContext value={{ onChildOpen, onChildClose }}>{children(layersAbove)}</StackContext>;

@@ -6,8 +6,8 @@ import { useState } from "react";
 import graphqlClient from "@/shared/api/graphql/graphqlClientApollo";
 import useQuery from "@/shared/api/graphql/useQuery";
 import { queryClient } from "@/shared/api/rest/client";
+import { Sheet } from "@/shared/components/aria/sheet";
 import { Tooltip } from "@/shared/components/aria/tooltip";
-import SlideOver from "@/shared/components/display/slide-over";
 import {
   PROPOSED_CHANGES_EDITABLE_STATE,
   PROPOSED_CHANGES_OBJECT,
@@ -57,33 +57,28 @@ export const ProposedChangeEditTrigger = ({
         </Button>
       </Tooltip>
 
-      <SlideOver
-        title={
-          <div className="space-y-2">
-            <div className="flex justify-between overflow-hidden">
-              <div className="flex grow items-center gap-2 truncate whitespace-nowrap text-sm">
-                <span>Proposed changes</span>
-                <Icon icon="mdi:chevron-right" />
-                <span className="truncate">
-                  {proposedChangesDetails ? getNodeLabel(proposedChangesDetails) : ""}
-                </span>
-              </div>
-
-              <ObjectHelpButton
-                kind={proposedChangeSchema?.label}
-                documentationUrl={proposedChangeSchema?.documentation}
-                className="shrink-0"
-              />
+      <Sheet isOpen={showEditDrawer} onOpenChange={setShowEditDrawer}>
+        <div className="space-y-2">
+          <div className="flex justify-between overflow-hidden">
+            <div className="flex grow items-center gap-2 truncate whitespace-nowrap text-sm">
+              <span>Proposed changes</span>
+              <Icon icon="mdi:chevron-right" />
+              <span className="truncate">
+                {proposedChangesDetails ? getNodeLabel(proposedChangesDetails) : ""}
+              </span>
             </div>
 
-            <div>
-              <h3 className="font-semibold text-lg">Edit Proposed change</h3>
-            </div>
+            <ObjectHelpButton
+              kind={proposedChangeSchema?.label}
+              documentationUrl={proposedChangeSchema?.documentation}
+              className="shrink-0"
+            />
           </div>
-        }
-        open={showEditDrawer}
-        setOpen={setShowEditDrawer}
-      >
+
+          <div>
+            <h3 className="font-semibold text-lg">Edit Proposed change</h3>
+          </div>
+        </div>
         <ProposedChangeEditForm
           initialData={proposedChangesDetails}
           onSuccess={async () => {
@@ -91,8 +86,9 @@ export const ProposedChangeEditTrigger = ({
             await graphqlClient.reFetchObservableQueries();
             await queryClient.invalidateQueries({ queryKey: proposedChangesQueryKeys.all });
           }}
+          onCancel={() => setShowEditDrawer(false)}
         />
-      </SlideOver>
+      </Sheet>
     </>
   );
 };

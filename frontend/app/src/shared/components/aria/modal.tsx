@@ -40,7 +40,7 @@ export function Modal({
   return (
     <ModalOverlay isOpen={isOpen} onOpenChange={onOpenChange} isDismissable={isDismissable}>
       {({ state: { isOpen } }) => (
-        <Stacked isStacked={isOpen}>
+        <Stacked group="modal" isStacked={isOpen}>
           {(depth) => (
             <AriaModal
               className={classNames(

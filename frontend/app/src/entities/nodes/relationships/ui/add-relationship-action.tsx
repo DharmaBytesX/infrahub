@@ -2,7 +2,8 @@ import { Button } from "@infrahub/ui";
 import type React from "react";
 import { useState } from "react";
 
-import SlideOver, { SlideOverTitle } from "@/shared/components/display/slide-over";
+import { Sheet } from "@/shared/components/aria/sheet";
+import { SlideOverTitle } from "@/shared/components/display/slide-over";
 import ObjectForm, { type ObjectFormProps } from "@/shared/components/form/object-form";
 
 import { useSchema } from "@/entities/schema/ui/hooks/useSchema";
@@ -30,19 +31,13 @@ export const AddRelationshipAction: React.FC<AddRelationshipActionProps> = ({
         + Add new <span className="truncate">{schema.label}</span>
       </Button>
 
-      <SlideOver
-        title={
-          <SlideOverTitle
-            schema={schema}
-            currentObjectLabel="New"
-            title={`Create ${schema.label}`}
-            subtitle={schema.description}
-          />
-        }
-        offset={1}
-        open={open}
-        setOpen={setOpen}
-      >
+      <Sheet isOpen={open} onOpenChange={setOpen}>
+        <SlideOverTitle
+          schema={schema}
+          currentObjectLabel="New"
+          title={`Create ${schema.label}`}
+          subtitle={schema.description}
+        />
         <ObjectForm
           kind={peer}
           onSuccess={async (newNode) => {
@@ -53,7 +48,7 @@ export const AddRelationshipAction: React.FC<AddRelationshipActionProps> = ({
           onCancel={() => setOpen(false)}
           data-testid="new-object-form"
         />
-      </SlideOver>
+      </Sheet>
     </div>
   );
 };

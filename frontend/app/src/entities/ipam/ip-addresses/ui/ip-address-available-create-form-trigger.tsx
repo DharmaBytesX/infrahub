@@ -1,7 +1,8 @@
 import React from "react";
 
 import { queryClient } from "@/shared/api/rest/client";
-import SlideOver, { SlideOverTitle } from "@/shared/components/display/slide-over";
+import { Sheet } from "@/shared/components/aria/sheet";
+import { SlideOverTitle } from "@/shared/components/display/slide-over";
 import ObjectForm from "@/shared/components/form/object-form";
 import { Tooltip } from "@/shared/components/ui/tooltip";
 
@@ -29,18 +30,13 @@ export function IpAddressAvailableCreateFormTrigger(props: IPAddressAvailableIde
         <IpAddressAvailableIdentifier onClick={() => setIsCreateFormOpen(true)} {...props} />
       </Tooltip>
 
-      <SlideOver
-        title={
-          <SlideOverTitle
-            schema={selectedSchema}
-            currentObjectLabel="New"
-            title={`Create ${selectedSchema.label}`}
-            subtitle={selectedSchema.description}
-          />
-        }
-        open={isCreateFormOpen}
-        setOpen={setIsCreateFormOpen}
-      >
+      <Sheet isOpen={isCreateFormOpen} onOpenChange={setIsCreateFormOpen}>
+        <SlideOverTitle
+          schema={selectedSchema}
+          currentObjectLabel="New"
+          title={`Create ${selectedSchema.label}`}
+          subtitle={selectedSchema.description}
+        />
         <ObjectForm
           onSuccess={async () => {
             await queryClient.invalidateQueries({ queryKey: objectQueryKeys.all });
@@ -61,7 +57,7 @@ export function IpAddressAvailableCreateFormTrigger(props: IPAddressAvailableIde
           onCancel={() => setIsCreateFormOpen(false)}
           kind={selectedSchema.kind!}
         />
-      </SlideOver>
+      </Sheet>
     </>
   );
 }
