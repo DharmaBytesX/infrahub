@@ -1,390 +1,237 @@
 ---
-Title: User Preferences & Saved Views
+Title: User & Global Preferences
 Author:
   - Paul Lemesle
 Status: draft
 ---
 
-# User Preferences & Saved Views
+# User & Global Preferences
 
 ## Summary
 
-Introduce persistent, per-user UI preferences stored in the graph, replacing ad-hoc `localStorage` usage and enabling cross-device continuity. The V1 scope delivers a `CoreUserPreference` node covering date format, branch deletion default, extra-fields toggle, and implicit last-used filters. The design is forward-compatible with two later phases: personal saved views (V2) and shared saved views (V3), which live in a separate `CoreSavedView` node so the preference surface stays lean.
+Introduce two persistent, schema-backed preference surfaces:
+
+- `CoreGlobalPreference` — admin-defined defaults that apply to every user (one singleton node).
+- `CoreUserPreference` — per-user overrides (one node per account).
+
+A single backend-computed query returns the **effective** preferences for the calling user (global merged with their personal overrides), so the frontend never has to merge them itself. Standard auto-generated CRUD mutations are used everywhere; no custom write path.
+
+V1 ships only two attributes — `date_format` and `timezone` — to validate the schema, query, mutation, and UI plumbing end to end. Additional preferences (dark mode, etc.) land in follow-up tickets once the foundation is proven.
+
+Three adjacent concerns get their own spec/ticket and are explicitly **not** part of V1:
+
+- Saved views — `dev/specs/2026-04-saved-views.md`
+- Saved filters — `dev/specs/2026-04-saved-filters.md`
+- "Show extra fields" toggle persistence — `dev/specs/2026-04-show-extra-fields.md`
 
 ## Problem Statement
 
-- UI preferences currently live in component state, URL query params (`nuqs`), or `localStorage`. Nothing survives a device switch, and nothing is discoverable by the backend or SDK.
-- No shared concept of "my settings" exists. Each feature solves persistence in its own way.
-- Users have no way to save and reuse filter combinations ("my pending changes"), nor to share curated views with teammates.
+- UI defaults (date format, timezone) live in component state or the browser's locale. They cannot be set centrally by an organization, and a user's choice does not survive a device switch.
+- There is no place for an admin to express "use ISO dates organisation-wide" or "default everyone to UTC".
+- There is no schema-backed concept of "preferences" that the SDK or other clients can read.
 
 ## Solution Overview
 
-Two separate concerns, two separate entities:
+Two schema nodes, one read query that fuses them.
 
-| Entity | Purpose | Lifecycle | Phase |
+| Node | Cardinality | Who writes | Who reads |
 |---|---|---|---|
-| `CoreUserPreference` | Per-user UI defaults and implicit state | One per account, auto-created on first write | V1 |
-| `CoreSavedView` | Named, reusable filter/sort/column presets | Many per account, explicit CRUD | V2 |
-| `CoreSavedView` + sharing | Views visible to other users via groups | Same node, extended attributes | V3 |
+| `CoreGlobalPreference` | Singleton (0..1) | Admin only | Authenticated users (read effective query) |
+| `CoreUserPreference` | One per `CoreGenericAccount` | Owning user (and admin) | Owner (and admin) |
 
-Keeping these distinct prevents the preference node from growing into an unbounded bag of application state.
+Effective resolution per attribute: **user value if set, else global value, else built-in default**. Defaults live in the frontend (so the SDK sees a `null` for "no opinion stored" and can apply its own).
 
-## Success Criteria
+## Success Criteria — V1
 
-### V1
+- An admin can set `date_format` and `timezone` once for the organisation; an unauthenticated browser-issued read returns those values for any user without a personal override.
+- A user can override either attribute on their own preferences page; the override takes effect on next page load and is visible from any device.
+- Removing a user override falls back to the global value; removing the global value falls back to the frontend default.
+- Standard CRUD mutations work for both nodes (admin tooling, SDK use, Postman).
+- A single GraphQL query returns the effective value to render with — no client-side merging.
 
-- Users can set date format, branch-delete default, extra-fields toggle, and filter defaults once and have them persist across devices.
-- Users can remove their preferences to reset to defaults.
+## V1 Attributes
 
-### V2
-
-- Users can save ≥1 named view per schema kind and switch between them.
-- Schema graph visualization state is persisted in the backend.
-
-### V3
-
-- A user can share a view with a group and another group member can open it read-only.
-
-## V1 — User Preferences
-
-### Backend
-
-#### Schema node: `CoreUserPreference`
-
-Defined in `backend/infrahub/core/schema/definitions/core/account.py` (colocated with `CoreAccount` / `AccountToken`).
-
-- `name="UserPreference"`, `namespace="Core"`
-- `branch=BranchSupportType.AGNOSTIC` (same as `AccountToken`)
-- Relationship: `account` → `CoreGenericAccount`, `cardinality=ONE`, required, identifier `account__preferences`
-- All attributes optional (user may only have set some)
-
-Initial attributes:
-
-| Attribute | Kind | Constraint | Purpose |
-|---|---|---|---|
-| `date_format` | Text | — | Free-form display format for dates/datetimes, stored as a date-fns pattern string (e.g. `dd/MM/yyyy`, `yyyy-MM-dd HH:mm`). The settings UI offers common patterns as presets (`yyyy-MM-dd`, `dd/MM/yyyy`, `MM/dd/yyyy`, `dd.MM.yyyy`, `PP`, `relative`) but the stored value is always the raw pattern. The literal string `relative` is a sentinel handled by the formatter (renders "2 hours ago"–style output) and is the only non-date-fns value accepted |
-| `timezone` | Text | — | IANA timezone name (e.g. `Europe/Paris`, `UTC`). Unset means "use the browser's resolved timezone". Not an enum — the IANA set is ~400 entries and grows; the frontend validates input against `Intl.supportedValuesOf('timeZone')` before submit |
-| `branch_delete_mode` | Text | enum: `local`, `local_and_git` | Default selection when opening the branch-delete dialog |
-| `show_extra_fields` | Boolean | — | Default for the "show extra attributes/relationships" toggle on object and list views. Final attribute name to align with whatever the UI calls the toggle today |
-| `last_used_filters` | JSON | — | Map keyed by schema kind → last-applied filter params. Structure is frontend-owned; backend stores and returns it verbatim |
-
-No attribute is required. A newly-provisioned account has no `CoreUserPreference` node until the frontend writes for the first time.
-
-YAML shape (reference; authoritative source is the Python definition in `account.py`):
-
-```yaml
-# yaml-language-server: $schema=https://schema.infrahub.app/infrahub/schema/latest.json
-version: "1.0"
-nodes:
-  - name: UserPreference
-    namespace: Core
-    label: User Preference
-    description: Per-user UI defaults and implicit state (one per account).
-    branch: agnostic
-    include_in_menu: false
-    generate_profile: false
-    display_label: "Preferences of {{ account__name__value }}"
-    icon: mdi:cog-outline
-    uniqueness_constraints:
-      - ["account"]
-    attributes:
-      - name: date_format
-        kind: Text
-        optional: true
-        order_weight: 1000
-        description: >-
-          Free-form date-fns pattern string (e.g. "dd/MM/yyyy",
-          "yyyy-MM-dd HH:mm"). The literal "relative" is a sentinel for
-          relative-time rendering ("2 hours ago"); all other values are
-          passed to date-fns format() verbatim.
-      - name: timezone
-        kind: Text
-        optional: true
-        order_weight: 1050
-        description: >-
-          IANA timezone name (e.g. Europe/Paris, UTC). Unset means
-          "use the browser's resolved timezone". Not an enum — the frontend
-          validates input against Intl.supportedValuesOf('timeZone').
-      - name: branch_delete_mode
-        kind: Text
-        enum: [local, local_and_git]
-        optional: true
-        order_weight: 1100
-        description: Default selection in the branch-delete dialog.
-      - name: show_extra_fields
-        kind: Boolean
-        optional: true
-        order_weight: 1200
-        description: Default for the "show extra fields" toggle on object/list views.
-      - name: last_used_filters
-        kind: JSON
-        optional: true
-        order_weight: 1300
-        description: Frontend-owned map, schema_kind -> last applied filter params.
-    relationships:
-      - name: account
-        peer: CoreGenericAccount
-        identifier: account__preferences
-        kind: Parent
-        cardinality: one
-        optional: false
-        on_delete: cascade
-        order_weight: 100
-```
-
-#### GraphQL operations
-
-A custom pair hides the "lookup account → find preferences → create or update" plumbing and enforces owner-only access in one place. Implemented in `backend/infrahub/graphql/queries/account.py` and `backend/infrahub/graphql/mutations/account.py`, reusing the `AccountMixin` JWT check already in place.
-
-```graphql
-query InfrahubMyPreferences {
-  InfrahubMyPreferences {
-    id
-    date_format { value }
-    timezone { value }
-    branch_delete_mode { value }
-    show_extra_fields { value }
-    last_used_filters { value }
-  }
-}
-
-mutation InfrahubMyPreferencesUpsert($data: CoreUserPreferenceUpsertInput!) {
-  InfrahubMyPreferencesUpsert(data: $data) {
-    ok
-    object {
-      id
-      date_format { value }
-      timezone { value }
-      branch_delete_mode { value }
-      show_extra_fields { value }
-      last_used_filters { value }
-    }
-  }
-}
-```
-
-Upsert semantics: if the caller has no `CoreUserPreference` node, one is created and linked to their account; otherwise the existing node is updated. Each call may set any subset of attributes; unset attributes are left untouched (partial update, not replace).
-
-Standard auto-generated `CoreUserPreferenceCreate/Update/Delete` mutations remain available for admin and SDK use cases; they are not the primary frontend path.
-
-#### Permissions
-
-- The `InfrahubMyPreferences` / `InfrahubMyPreferencesUpsert` operations resolve the account from the JWT and only touch that account's preference node. No path exists through these operations to read or write another user's preferences.
-- Administrative reset: an admin with node-level permission on `CoreUserPreference` can delete a user's node via standard GraphQL; the user's next write recreates an empty one. No dedicated reset mutation in V1.
-
-#### Node lifecycle
-
-- **Create:** lazy — first call to `InfrahubMyPreferencesUpsert` creates the node.
-- **Read:** `InfrahubMyPreferences` returns `null` when no node exists, so the frontend can render defaults without a special-case 404.
-- **Delete:** only via admin path; frontend has no delete operation in V1.
-- **Account deletion:** `CoreUserPreference` must be removed when its owning account is deleted (on-delete cascade in the relationship definition).
-
-### Frontend
-
-#### Data layer
-
-- A single TanStack Query hook `useMyPreferences()` in `frontend/app/src/entities/user-preferences/` exposes `{ preferences, updatePreference }`.
-- Backed by the `InfrahubMyPreferences` query. Mutation goes through `InfrahubMyPreferencesUpsert` with optimistic cache update + invalidation on error.
-- No `localStorage` dual-write; TanStack Query is the sole client-side cache. Authoritative state always lives in the backend.
-- Default values are defined client-side and applied when the corresponding attribute is `null`/missing.
-
-#### Call sites (V1)
-
-| Caller | Reads | Writes |
-|---|---|---|
-| Date formatter helper (`frontend/app/src/shared/hooks/useDateFormat.ts`, new) | `date_format`, `timezone` | — |
-| Branch delete button (`frontend/app/src/entities/branches/ui/branch-delete-button.tsx`) | `branch_delete_mode` as default of the mode selector | writes on "remember my choice" |
-| Object/list view "show extra fields" toggle | `show_extra_fields` | writes on toggle |
-| Object list page filter bar | `last_used_filters[schema_kind]` | writes on filter change (debounced) |
-
-The date formatter helper passes `date_format` straight to date-fns `format()` (short-circuiting to `formatDistanceToNow` when the value is `relative`), and applies `timezone` via `date-fns-tz` (new dependency, ~15 kB gz). All existing `format(date, …)` call sites route through this helper so preferences apply uniformly. When `timezone` is unset, the helper uses `Intl.DateTimeFormat().resolvedOptions().timeZone`. Invalid patterns are caught client-side at write time (settings form validates by attempting a dry-run `format(new Date(), pattern)`); the backend does not validate date-fns syntax.
-
-#### Not migrated in V1
-
-- Schema graph visualization state (fold/zoom/positions) stays in `localStorage` for V1. V2 moves it to the backend via an additive `schema_graph_state` JSON attribute on `CoreUserPreference`.
-
-## V2 — Personal Saved Views (planned, not in V1 scope)
-
-### Schema node: `CoreSavedView`
-
-Defined alongside `CoreUserPreference`. Owner-only in V2; sharing added in V3.
+Identical attribute set on both nodes (so the merge is trivially per-attribute):
 
 | Attribute | Kind | Notes |
 |---|---|---|
-| `name` | Text | Required, unique per (owner, schema_kind) |
-| `description` | Text | Optional |
-| `schema_kind` | Text | The kind this view applies to, e.g. `CoreRepository` |
-| `filters` | JSON | Filter state, frontend-owned shape |
-| `sort` | JSON | Optional sort order |
-| `visible_columns` | JSON | Optional column visibility override |
+| `date_format` | Text | date-fns pattern string (e.g. `dd/MM/yyyy`, `yyyy-MM-dd HH:mm`). Literal `relative` is a sentinel for relative-time rendering. Validated client-side via dry-run `format(new Date(), pattern)`; backend stores verbatim. |
+| `timezone` | Text | IANA timezone name (`Europe/Paris`, `UTC`). Validated client-side against `Intl.supportedValuesOf('timeZone')`. Unset = browser-resolved zone. |
 
-Relationships:
+All attributes optional on both nodes. Other candidates (dark mode, language, density) are deferred — see "Future preferences" below.
 
-- `owner` → `CoreGenericAccount`, `cardinality=ONE`, required, identifier `account__saved_views`
+## Backend
 
-YAML shape (V2, owner-only; V3 extensions in the next section):
+### `CoreGlobalPreference`
 
-```yaml
-# yaml-language-server: $schema=https://schema.infrahub.app/infrahub/schema/latest.json
-version: "1.0"
-nodes:
-  - name: SavedView
-    namespace: Core
-    label: Saved View
-    description: Named filter/sort/column preset for a schema kind.
-    branch: agnostic
-    default_filter: name__value
-    order_by: [schema_kind__value, name__value]
-    human_friendly_id: ["owner__name__value", "schema_kind__value", "name__value"]
-    display_label: "{{ name__value }} ({{ schema_kind__value }})"
-    icon: mdi:bookmark-outline
-    include_in_menu: false
-    uniqueness_constraints:
-      - ["owner", "schema_kind__value", "name__value"]
-    attributes:
-      - name: name
-        kind: Text
-        optional: false
-        order_weight: 1000
-      - name: description
-        kind: Text
-        optional: true
-        order_weight: 1100
-      - name: schema_kind
-        kind: Text
-        optional: false
-        order_weight: 1200
-      - name: filters
-        kind: JSON
-        optional: true
-        order_weight: 2000
-      - name: sort
-        kind: JSON
-        optional: true
-        order_weight: 2100
-      - name: visible_columns
-        kind: JSON
-        optional: true
-        order_weight: 2200
-    relationships:
-      - name: owner
-        peer: CoreGenericAccount
-        identifier: account__saved_views
-        kind: Parent
-        cardinality: one
-        optional: false
-        on_delete: cascade
-        order_weight: 100
-```
-
-### Interaction with `CoreUserPreference`
-
-Add two attributes to `CoreUserPreference` in V2:
-
-- `selected_saved_views` (JSON): map `schema_kind → saved_view_id`. Records which view the user currently has active per kind, so reopening the page restores it.
-- `schema_graph_state` (JSON): fold/zoom/positions and any other per-user schema graph visualization state, migrated off `localStorage`.
-
-YAML diff (additive — the V1 block above gains these two attributes):
+- Defined in `backend/infrahub/core/schema/definitions/core/account.py` (or `preferences.py` if we prefer to keep account-scoped files focused).
+- `name="GlobalPreference"`, `namespace="Core"`.
+- `branch=BranchSupportType.AGNOSTIC`.
+- Singleton enforced by an empty uniqueness constraint plus a startup check that creates the row if missing — or, simpler, treated as "0..1, app code refuses to create a second one". Decision flagged for implementation.
+- No relationships in V1.
 
 ```yaml
-# additions to CoreUserPreference.attributes in V2
-- name: selected_saved_views
-  kind: JSON
-  optional: true
-  order_weight: 1400
-  description: Map schema_kind -> saved_view_id currently active.
-- name: schema_graph_state
-  kind: JSON
-  optional: true
-  order_weight: 1500
-  description: Fold/zoom/positions of the schema graph visualization.
+- name: GlobalPreference
+  namespace: Core
+  label: Global Preference
+  description: Organisation-wide defaults applied to every user unless overridden.
+  branch: agnostic
+  include_in_menu: false
+  generate_profile: false
+  display_label: "Global Preferences"
+  icon: mdi:cog
+  attributes:
+    - name: date_format
+      kind: Text
+      optional: true
+      order_weight: 1000
+    - name: timezone
+      kind: Text
+      optional: true
+      order_weight: 1100
 ```
 
-Resolution order when rendering a list page (V2):
+### `CoreUserPreference`
 
-1. If `preferences.selected_saved_views[kind]` points to a readable `CoreSavedView`, apply that view's `filters/sort/visible_columns`.
-2. Else, apply `preferences.last_used_filters[kind]`.
-3. Else, apply the page's built-in defaults.
+- Same file as above. Same V1 attribute set as `CoreGlobalPreference`.
+- Relationship `account` → `CoreGenericAccount`, cardinality ONE, required, identifier `account__preferences`, `on_delete: cascade`.
+- Uniqueness constraint on `account` so an account has at most one preference node.
 
-`last_used_filters` is not touched when a saved view is active. Applying an ad-hoc filter on top of an open saved view is a UX decision deferred to V2 design (see Open Questions).
+```yaml
+- name: UserPreference
+  namespace: Core
+  label: User Preference
+  description: Per-user overrides of global preferences.
+  branch: agnostic
+  include_in_menu: false
+  generate_profile: false
+  display_label: "Preferences of {{ account__name__value }}"
+  icon: mdi:account-cog-outline
+  uniqueness_constraints:
+    - ["account"]
+  attributes:
+    - name: date_format
+      kind: Text
+      optional: true
+      order_weight: 1000
+    - name: timezone
+      kind: Text
+      optional: true
+      order_weight: 1100
+  relationships:
+    - name: account
+      peer: CoreGenericAccount
+      identifier: account__preferences
+      kind: Parent
+      cardinality: one
+      optional: false
+      on_delete: cascade
+      order_weight: 100
+```
 
-### GraphQL operations (V2)
+### GraphQL operations
 
-Custom owner-scoped query plus standard CRUD mutations:
+**Standard auto-generated mutations** are the primary write path:
+
+- `CoreGlobalPreferenceUpsert / Update / Delete` — admin only via permissions.
+- `CoreUserPreferenceUpsert / Update / Delete` — node-level permission scoped to owner-or-admin.
+
+No custom write mutation — keeps the surface predictable and aligned with the rest of the schema.
+
+**Standard auto-generated queries** are also exposed (`CoreGlobalPreference`, `CoreUserPreference`) for admin tooling and SDK introspection.
+
+**One custom read query** for the rendering path:
 
 ```graphql
-query InfrahubMySavedViews($schema_kind: String) {
-  InfrahubMySavedViews(schema_kind: $schema_kind) {
-    edges { node { id name description schema_kind filters { value } sort { value } visible_columns { value } } }
+query InfrahubEffectivePreferences {
+  InfrahubEffectivePreferences {
+    date_format   # value or null
+    timezone      # value or null
+    # scalar fields, not Attribute wrappers — this is a computed view, not a node
   }
 }
-
-mutation CoreSavedViewCreate($data: CoreSavedViewCreateInput!) { ... }
-mutation CoreSavedViewUpdate($data: CoreSavedViewUpdateInput!) { ... }
-mutation CoreSavedViewDelete($data: CoreSavedViewDeleteInput!) { ... }
 ```
 
-The custom `InfrahubMySavedViews` returns both views owned by the caller and (in V3) views shared with the caller's groups. Standard CRUD is permissioned on ownership.
+Implementation in `backend/infrahub/graphql/queries/preferences.py`:
 
-## V3 — Shared Saved Views (planned, not in V1 scope)
+1. Resolve account from JWT (existing `AccountMixin` pattern).
+2. Read the singleton `CoreGlobalPreference` (cache-friendly, branch-agnostic).
+3. Read the caller's `CoreUserPreference` if any.
+4. Per attribute: return user value if set, else global value, else `null`.
 
-Extend `CoreSavedView` with two sharing relationships; no rework of V2 required.
+The frontend interprets `null` as "use built-in default". The SDK can do the same.
 
-| Addition | Kind | Notes |
-|---|---|---|
-| `shared_with_groups` | Relationship → `CoreAccountGroup`, `cardinality=MANY` | Members of these groups get read access |
-| `shared_with_accounts` | Relationship → `CoreGenericAccount`, `cardinality=MANY` | Direct share with specific users, no group required |
+### Permissions
 
-No `visibility` enum: a view is private iff both share relationships are empty. Single source of truth, and "unshare" is just removing the peer. Sharing remains opt-in per view — there is no bulk folder-level share concept.
+| Operation | Allowed for |
+|---|---|
+| Read `InfrahubEffectivePreferences` | Any authenticated account (returns their own effective view) |
+| Read `CoreGlobalPreference` | Any authenticated account |
+| Write `CoreGlobalPreference` | Admins (via existing node-level permission model) |
+| Read/write `CoreUserPreference` | Owner; admin can also read/write any user's prefs |
 
-YAML diff (additive — appended to `CoreSavedView.relationships` from V2):
+Owner check on `CoreUserPreference` writes is enforced through the standard permission system, not bespoke logic — same approach as `AccountToken`.
 
-```yaml
-# additions to CoreSavedView.relationships in V3
-- name: shared_with_groups
-  peer: CoreAccountGroup
-  identifier: saved_view__shared_groups
-  kind: Attribute
-  cardinality: many
-  optional: true
-  order_weight: 3000
-  description: Members of these groups get read access.
-- name: shared_with_accounts
-  peer: CoreGenericAccount
-  identifier: saved_view__shared_accounts
-  kind: Attribute
-  cardinality: many
-  optional: true
-  order_weight: 3100
-  description: Direct share with specific users.
-```
+## Frontend
 
+### Data layer
 
-Permission model:
+- TanStack Query hook `useEffectivePreferences()` in `frontend/app/src/entities/preferences/` exposes `{ date_format, timezone }` (already merged).
+- Hooks for admin paths: `useGlobalPreferences()` / `useUpdateGlobalPreferences()`.
+- Hooks for the user override path: `useMyUserPreferences()` / `useUpdateMyUserPreferences()`.
+- All write hooks invalidate `useEffectivePreferences()` on success.
+- No `localStorage` dual-write.
 
-- **Read:** owner always; any account in `shared_with_accounts`; any account that is a member of a group in `shared_with_groups`. Resolved as a single one-hop graph predicate (`account -[:member_of]-> group <-[:shared_with_groups]- view` ∪ `account <-[:shared_with_accounts]- view`), reusing how `CoreAccountGroup.members` is already traversed in `backend/infrahub/auth.py`.
-- **Write (update/delete/share):** owner only.
-- **Fork:** a read-only viewer can duplicate a shared view into a new `CoreSavedView` owned by them. Implemented as a custom mutation `InfrahubSavedViewFork(id)` that clones attributes and re-parents `owner`. No native primitive replaces this.
+### Preferences page
 
-Groups reuse Infrahub's existing `CoreAccountGroup` model — no new grouping concept is introduced.
+New route `/settings/preferences` (exact path TBD against existing settings IA):
 
-Frontend additions (V3): a "Share…" dialog on views the user owns (targets groups and/or users); read-only indication on views shared in; a "Duplicate to my views" action on shared views.
+- Two sections, only visible if the user has the relevant permission:
+  - **My preferences** — editable form for `date_format`, `timezone`. Each field shows the inherited global value as its placeholder/hint when the user has no override; a "reset to global" button clears the override.
+  - **Organisation defaults** *(admin only)* — editable form for the same fields on `CoreGlobalPreference`.
+- Form validation:
+  - `date_format`: dry-run `date-fns.format(new Date(), value)`; reject if it throws.
+  - `timezone`: must be in `Intl.supportedValuesOf('timeZone')`.
 
-## Out of Scope
+### Date formatter helper
 
+`frontend/app/src/shared/hooks/useDateFormat.ts` (new):
+
+- Reads `useEffectivePreferences()`.
+- Default `date_format` if both global and user are unset: `yyyy-MM-dd HH:mm` (decision flagged).
+- Default `timezone` if unset: `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+- Routes through `date-fns` + `date-fns-tz` (~15 kB gz, new dependency).
+- All current `format(date, …)` call sites migrate to this helper so the preference applies uniformly.
+
+## Future Preferences (out of V1, listed for context)
+
+These will be added incrementally once the V1 plumbing is proven. Each requires its own design pass:
+
+- **Dark mode / theme** — needs a decision on system-vs-stored preference, transition strategy, and whether the global default is meaningful.
+- **Language** — depends on the i18n strategy.
+- **Density** (compact / comfortable list rows).
+- **Default landing page after login**.
+
+These are listed here as a backlog hint, not committed scope.
+
+## Out of Scope (separate specs/tickets)
+
+- Saved views — `dev/specs/2026-04-saved-views.md`
+- Saved filters (formerly `last_used_filters`) — `dev/specs/2026-04-saved-filters.md`
+- "Show extra fields" toggle persistence — `dev/specs/2026-04-show-extra-fields.md`
+- `branch_delete_mode` — explicitly dropped. Persisting a destructive default is too dangerous; the dialog will keep prompting per action.
 - Cross-account preference import/export.
+- Schema graph visualisation state (fold/zoom/positions) — stays in `localStorage` for now.
 
 ## Open Questions
 
-- **Date format storage.** Resolved: store the raw date-fns pattern as free-form text (no enum). The settings UI exposes a handful of presets for discoverability, but the stored value is always the pattern itself so users can enter any combination (`dd/MM/yyyy HH:mm`, `yyyy-MM-dd`, etc.) without a schema change. The literal `relative` is reserved as a sentinel for relative-time rendering. Tradeoff accepted: stored values are coupled to date-fns token syntax; swapping formatter libraries later would require a data migration. Validation lives on the client (attempt a dry-run format); the backend stores what it receives.
-- **Timezone override.** Resolved: add a separate `timezone` Text attribute (IANA name, optional, unset = browser local). Conflating it with `date_format` would mix appearance with semantic value. Adopting zone-aware formatting requires `date-fns-tz` as a new frontend dependency (~15 kB gz) since plain `date-fns` does not convert zones — flag during implementation.
-- **Extra-fields toggle name.** The attribute should match the UI's wording. To be resolved during implementation by locating the current toggle in object and list views.
-- **Debounce window for `last_used_filters` writes.** Suggested starting point: 1 s after the last filter change, with a flush on page navigation.
-- **V2 only — ad-hoc edits on top of a saved view.** Behavior when the user changes a filter while a saved view is active: drop the view selection and fall back to `last_used_filters`, or require an explicit "fork / save as" step. Deferred to V2 design.
-- **V3 only — reuse `LINEAGEOWNER` for `CoreSavedView.owner`.** `CoreRepository`, `CoreAccount`, and others already inherit Infrahub's `LINEAGEOWNER` generic for audit trail. If `CoreSavedView` inherits it, the custom `owner` relationship can be dropped and "created by" comes for free — but only if write authorization can key off the lineage owner cleanly. Needs verification before committing.
+- **Singleton enforcement for `CoreGlobalPreference`.** Easiest is "treat as 0..1, app refuses to create a second", possibly seeded by a migration creating an empty row. Confirm during implementation.
+- **Effective query shape.** Returning scalar fields rather than the standard `Attribute { value }` wrapper diverges from the rest of the GraphQL surface. Tradeoff: easier to consume, but inconsistent. Open for review.
+- **Default `date_format` when nothing is stored.** Suggested: `yyyy-MM-dd HH:mm`. Locale-aware default would be friendlier but couples behaviour to browser locale and hides the inheritance chain.
+- **Settings page location.** Slot under existing account settings, or top-level `/settings/preferences`?
 
 ## Migration & Rollout
 
-- V1 ships purely additive: new schema node, new GraphQL operations, new frontend hook. No data migration required.
-- Existing `localStorage`-backed behaviors (schema graph viz) are untouched in V1 and keep working as-is.
-- Feature can be released incrementally per call site: date format first (read-only display impact, safe), then branch delete mode, then extra-fields toggle, then list filters.
+- Purely additive. New schema nodes, new GraphQL query, new frontend hook + page.
+- Existing date-rendering code keeps working until each call site migrates to the new helper. Migration can ship incrementally per call site.
+- No data migration required.
