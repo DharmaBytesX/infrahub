@@ -17052,6 +17052,12 @@ export type GenericPoolInput = {
   identifier?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type GraphQlQueryReport = {
+  __typename: 'GraphQLQueryReport';
+  /** True if every operation in the submitted query resolves to uniquely identifiable nodes (via a required ids argument or a required field matching the model uniqueness constraints). When true, Infrahub limits artifact regeneration to only the nodes that changed. When false, all artifacts for the definition are regenerated on any relevant node change. */
+  targets_unique_nodes: Scalars['Boolean']['output'];
+};
+
 export type GroupEvent = EventNodeInterface & {
   __typename: 'GroupEvent';
   /** The account ID that triggered the event. */
@@ -24590,6 +24596,8 @@ export type Query = {
   /** Retrieve paginated information about active branches. */
   InfrahubBranch: InfrahubBranchType;
   InfrahubEvent: Events;
+  /** Analyze a GraphQL query string and return a report describing how Infrahub will interpret it. */
+  InfrahubGraphQLQueryReport: GraphQlQueryReport;
   InfrahubIPAddressGetNextAvailable: IpAddressGetNextAvailable;
   InfrahubIPPrefixGetNextAvailable: IpPrefixGetNextAvailable;
   InfrahubInfo: Info;
@@ -35902,6 +35910,11 @@ export type QueryInfrahubEventArgs = {
   related_node__ids?: InputMaybe<Array<Scalars['String']['input']>>;
   since?: InputMaybe<Scalars['DateTime']['input']>;
   until?: InputMaybe<Scalars['DateTime']['input']>;
+};
+
+
+export type QueryInfrahubGraphQlQueryReportArgs = {
+  query: Scalars['String']['input'];
 };
 
 
