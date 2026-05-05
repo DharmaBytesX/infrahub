@@ -356,7 +356,7 @@ class PrefectTask:
             cutoff = datetime.now(UTC) - timedelta(days=days_to_keep)
 
             flow_run_filter = FlowRunFilter(
-                start_time=FlowRunFilterStartTime(before_=cutoff),  # type: ignore[arg-type]
+                start_time=FlowRunFilterStartTime(before_=cutoff),
                 state=FlowRunFilterState(type=FlowRunFilterStateType(any_=states)),
             )
 
